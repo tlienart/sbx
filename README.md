@@ -1,4 +1,4 @@
-# Sbx (Bun/TypeScript Version)
+# `sbx` lightweight sandbox for macOS
 
 > [!NOTE]
 > This project is a derived work from [AkihiroSuda/alcless](https://github.com/AkihiroSuda/alcless).
