@@ -24,31 +24,69 @@ cd sbx
 make install
 ```
 
-### Common Commands
+### Sandboxed Authentication
+
+Sbx includes a unique "interception" mechanism that allows tools inside the sandbox to perform authenticated operations (like `git push` or calling LLM APIs) **without the sandbox ever having access to your secrets**.
+
+### How it Works
+1.  **Intercepted Commands**: When you run `git` or `gh` inside the sandbox, the request is transparently forwarded to a "Bridge" running on your host.
+2.  **Host Execution**: The host executes the command using its own isolated environment and your provided secrets, then streams the result back to the sandbox.
+3.  **API Proxy**: For tools like **OpenCode**, a local proxy intercepts requests to LLM providers (Google, OpenAI, Anthropic) and injects the API keys on the host side.
+
+### Setup
+
+To enable this, set the following environment variables on your **host**, or create a `.env` file in the `sbx` project root:
+
+```bash
+# GitHub Authentication (for git and gh)
+SBX_GITHUB_TOKEN="your_pat_token"
+
+# LLM API Keys (for OpenCode)
+SBX_GOOGLE_API_KEY="your_key"
+SBX_OPENAI_API_KEY="your_key"
+SBX_ANTHROPIC_API_KEY="your_key"
+```
+
+### GitHub PAT Guide
+For maximum security, it is recommended to create a **Fine-grained Personal Access Token**:
+1.  Go to **GitHub Settings** > **Developer Settings** > **Personal Access Tokens** > **Fine-grained tokens**.
+2.  Click **Generate new token**.
+3.  **Repository selection**: Select "Only select repositories" and pick the ones you want the sandbox to access.
+4.  **Permissions**:
+    *   **Issues**: Read and Write
+    *   **Pull requests**: Read and Write
+    *   **Metadata**: Read-only
+5.  This allows the sandbox (via the host bridge) to open issues, PRs, and comment, but it cannot delete repositories or access your private data outside the selection.
+
+### OpenCode Integration
+You can specify the LLM provider when creating a sandbox:
+```bash
+make create NAME="mybox" provider="google"
+```
+The sandbox will be automatically configured to use the host-side proxy for that provider.
+
+## Common Commands
 
 The easiest way to interact with Sbx is via `make`:
 
 | Action | Command |
 | :--- | :--- |
-| **Create** | `make create NAME="sbox1 sbox2"` |
-| **Create with Tools** | `make create NAME="sbox1" TOOLS="gh,jq,ffmpeg"` |
+| **Create** | `make create name="sbox1 sbox2"` |
+| **Create with Tools** | `make create name="sbox1" tools="gh,jq,ffmpeg"` |
 | **List** | `make list` |
-| **Enter Session** | `make exec NAME="sbox1"` |
-| **Delete** | `make delete NAME="sbox1"` |
+| **Enter Session** | `make exec name="sbox1"` |
+| **Delete** | `make delete name="sbox1"` |
 | **Clean All** | `make clean` |
 | **Test** | `make test` |
 
-## Interacting with Sessions
+...
 
-Once a session is created, you can interact with it in several ways:
-
-### 1. Interactive Shell
-To drop into an interactive `zsh` session as the sandbox user:
+### OpenCode Integration
+You can specify the LLM provider when creating a sandbox:
 ```bash
-make exec NAME="sbox1"
-# or
-./bin/sbx exec sbox1
+make create name="mybox" provider="google"
 ```
+
 
 ### 2. Run a Single Command
 To run a command and return immediately:

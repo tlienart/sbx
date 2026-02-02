@@ -14,6 +14,7 @@ program
   .description('Create one or more user sessions')
   .argument('<names...>', 'names of the instances')
   .option('-t, --tools <tools>', 'additional tools to install (comma separated)')
+  .option('-p, --provider <provider>', 'LLM provider (google, openai, anthropic)', 'google')
   .option('-c, --concurrency <number>', 'number of parallel setups', '2')
   .action(createCommand);
 

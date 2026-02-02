@@ -9,7 +9,7 @@ import { createSessionUser } from '../lib/user.ts';
 
 export async function createCommand(
   instances: string[],
-  options: { tools?: string; concurrency?: string },
+  options: { tools?: string; concurrency?: string; provider?: string },
 ) {
   if (instances.length === 0) {
     logger.error('Please specify at least one instance name.');
@@ -60,7 +60,7 @@ export async function createCommand(
           ? `Provisioning tools (${options.tools})...`
           : 'Provisioning toolchain (pkgx)...';
         bar.update(50, { step: toolMsg });
-        await provisionSession(instance, options.tools);
+        await provisionSession(instance, options.tools, options.provider);
 
         bar.update(100, { step: 'Finished!' });
       } catch (err: any) {
