@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Lint, Typecheck & Test
+    runs-on: macos-15
+    timeout-minutes: 15
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint & Format Check
+        run: bun run check
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Unit Tests
+        run: bun test
+
+      - name: Integration Smoke Test
+        run: |
+          set -eux
+          # 1. Create a session
+          sudo ./bin/sbx create ci-smoke
+          
+          # 2. List sessions
+          ./bin/sbx list | grep ci-smoke
+          
+          # 3. Exec tools
+          sudo ./bin/sbx exec ci-smoke "gh --version && jq --version && uv --version && bun --version"
+          
+          # 4. Cleanup
+          sudo ./bin/sbx delete ci-smoke

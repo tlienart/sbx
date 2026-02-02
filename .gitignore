@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Local State & Logs
+.sbx/
+*.log
+
+# Build & TypeScript
+*.tsbuildinfo
+
+# Environment Secrets (Safety)
+.env
+.env.local
+.env.*.local
+
+# OS Specific (macOS)
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+
+# Editor Specific
+.vscode/
+.idea/
+*.swp
+*.swo
