@@ -24,23 +24,23 @@ setup:
 USER_PREFIX := sbx_$(shell whoami)_
 
 # Create one or more sandboxes
-# Usage: make create NAME="session1 session2" TOOLS="gh,jq"
+# Usage: make create name="session1 session2" tools="gh,jq" provider="google"
 create: setup
-	./bin/sbx create $(NAME) $(if $(TOOLS),--tools "$(TOOLS)")
+	./bin/sbx create $(name) $(if $(tools),--tools "$(tools)") $(if $(provider),--provider "$(provider)")
 
 # List all sandboxes
 list:
 	./bin/sbx list
 
 # Execute a command or open a shell in a sandbox
-# Usage: make exec NAME="session1" [CMD="command"]
+# Usage: make exec name="session1" [cmd="command"]
 exec:
-	./bin/sbx exec $(NAME) $(CMD)
+	./bin/sbx exec $(name) $(cmd)
 
 # Delete one or more sandboxes
-# Usage: make delete NAME="session1 session2"
+# Usage: make delete name="session1 session2"
 delete:
-	./bin/sbx delete $(NAME)
+	./bin/sbx delete $(name)
 
 # Aggressively clean up all sbx related artifacts
 clean:
