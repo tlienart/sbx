@@ -33,12 +33,39 @@ The easiest way to interact with Sbx is via `make`:
 | **Create** | `make create NAME="sbox1 sbox2"` |
 | **Create with Tools** | `make create NAME="sbox1" TOOLS="gh,jq,ffmpeg"` |
 | **List** | `make list` |
+| **Enter Session** | `make exec NAME="sbox1"` |
 | **Delete** | `make delete NAME="sbox1"` |
 | **Clean All** | `make clean` |
 | **Test** | `make test` |
 
-> [!TIP]
-> To enter a session manually: `./bin/sbx exec sbox1`. This starts an interactive `zsh` session as the sandbox user.
+## Interacting with Sessions
+
+Once a session is created, you can interact with it in several ways:
+
+### 1. Interactive Shell
+To drop into an interactive `zsh` session as the sandbox user:
+```bash
+make exec NAME="sbox1"
+# or
+./bin/sbx exec sbox1
+```
+
+### 2. Run a Single Command
+To run a command and return immediately:
+```bash
+make exec NAME="sbox1" CMD="ls -la"
+# or
+./bin/sbx exec sbox1 "ls -la"
+```
+
+### 3. Sudo Access
+The sandbox user has full `sudo` privileges. You can perform administrative tasks inside the session without affecting the host:
+```bash
+make exec NAME="sbox1" CMD="sudo port install top"
+```
+
+### 4. Exit
+To leave the session, simply type `exit` or press `Ctrl-D`.
 
 ## Toolchain (Powered by pkgx)
 
