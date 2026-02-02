@@ -1,7 +1,21 @@
-.PHONY: clean test setup logs doctor check
+.PHONY: clean test setup logs doctor check create list delete
 
 # Standard user prefix
 USER_PREFIX := sbx_$(shell whoami)_
+
+# Create one or more sandboxes
+# Usage: make create NAME="session1 session2"
+create: setup
+	./bin/sbx create $(NAME)
+
+# List all sandboxes
+list:
+	./bin/sbx list
+
+# Delete one or more sandboxes
+# Usage: make delete NAME="session1 session2"
+delete:
+	./bin/sbx delete $(NAME)
 
 # Aggressively clean up all sbx related artifacts
 clean:
