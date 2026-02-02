@@ -3,8 +3,12 @@ BUN := $(shell command -v bun || echo $(HOME)/.bun/bin/bun)
 
 .PHONY: install setup clean test logs doctor check create list delete
 
-# Install Bun if missing and setup the project
+# Install pkgx and Bun if missing and setup the project
 install:
+	@if ! command -v pkgx >/dev/null 2>&1; then \
+		echo "📦 pkgx not found. Installing pkgx..."; \
+		curl -Ssf https://pkgx.sh | sh; \
+	fi
 	@if ! command -v bun >/dev/null 2>&1 && [ ! -f $(HOME)/.bun/bin/bun ]; then \
 		echo "📦 Bun not found. Installing Bun..."; \
 		curl -fsSL https://bun.sh/install | bash; \
@@ -20,9 +24,9 @@ setup:
 USER_PREFIX := sbx_$(shell whoami)_
 
 # Create one or more sandboxes
-# Usage: make create NAME="session1 session2"
+# Usage: make create NAME="session1 session2" TOOLS="gh,jq"
 create: setup
-	./bin/sbx create $(NAME)
+	./bin/sbx create $(NAME) $(if $(TOOLS),--tools "$(TOOLS)")
 
 # List all sandboxes
 list:
