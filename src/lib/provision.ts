@@ -7,7 +7,8 @@ import { getSessionUsername } from './user.ts';
  */
 async function ensurePkgxOnHost(): Promise<void> {
   try {
-    await run('pkgx', ['--version']);
+    // Check if in PATH or at common absolute path
+    await run('bash', ['-c', 'command -v pkgx || ls /usr/local/bin/pkgx']);
     return;
   } catch {
     logger.info('pkgx not found. Installing pkgx host-wide...');
@@ -26,14 +27,21 @@ export async function provisionSession(instanceName: string, tools?: string): Pr
 
   // Configure pkgx in session profiles.
   // PKGX_YES=1 allows non-interactive tool installation on first use.
+  // We explicitly add /usr/local/bin to PATH to ensure pkgx is found.
+  const pathCmd = 'export PATH="/usr/local/bin:$PATH"';
   const setupCmd = 'eval "$(pkgx --setup)"';
   const yesCmd = 'export PKGX_YES=1';
 
   const profileCmds = [
-    `grep -q "pkgx --setup" ~/.zprofile 2>/dev/null || echo '${setupCmd}' >> ~/.zprofile`,
+    // zsh
+    `grep -q "pkgx --setup" ~/.zprofile 2>/dev/null || (echo '${pathCmd}' >> ~/.zprofile && echo '${setupCmd}' >> ~/.zprofile)`,
     `grep -q "PKGX_YES" ~/.zprofile 2>/dev/null || echo '${yesCmd}' >> ~/.zprofile`,
-    `grep -q "pkgx --setup" ~/.bash_profile 2>/dev/null || echo '${setupCmd}' >> ~/.bash_profile`,
+    `grep -q "pkgx --setup" ~/.zshenv 2>/dev/null || (echo '${pathCmd}' >> ~/.zshenv && echo '${setupCmd}' >> ~/.zshenv)`,
+
+    // bash
+    `grep -q "pkgx --setup" ~/.bash_profile 2>/dev/null || (echo '${pathCmd}' >> ~/.bash_profile && echo '${setupCmd}' >> ~/.bash_profile)`,
     `grep -q "PKGX_YES" ~/.bash_profile 2>/dev/null || echo '${yesCmd}' >> ~/.bash_profile`,
+    `grep -q "pkgx --setup" ~/.bashrc 2>/dev/null || (echo '${pathCmd}' >> ~/.bashrc && echo '${setupCmd}' >> ~/.bashrc)`,
   ].join(' && ');
 
   await runAsUser(sessionUser, `bash -c '${profileCmds}'`);

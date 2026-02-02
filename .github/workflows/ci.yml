@@ -35,8 +35,8 @@ jobs:
       - name: Integration Smoke Test
         run: |
           set -eux
-          # 1. Create a session
-          sudo ./bin/sbx create ci-smoke
+          # 1. Create a session with tools
+          sudo ./bin/sbx create ci-smoke --tools "gh,jq,uv,bun"
           
           # 2. List sessions
           ./bin/sbx list | grep ci-smoke

@@ -12,15 +12,15 @@ async function stage5() {
 
   try {
     logger.info(`Provisioning pkgx toolchain for ${username}...`);
-    // We pre-cache jq and gh for the test to ensure they work
-    await provisionSession(TEST_NAME, 'jq,gh');
+    // We pre-cache standard tools for the test to ensure they work
+    await provisionSession(TEST_NAME, 'jq,gh,uv,bun');
     logger.success('Toolchain provisioned successfully.');
 
     logger.info('Verifying pkgx and tools via login shell...');
     // We use a login shell to ensure profile files are sourced
     const verify = await runAsUser(
       username,
-      'zsh -l -c "pkgx --version && jq --version && gh --version"',
+      'zsh -l -c "pkgx --version && jq --version && gh --version && uv --version && bun --version"',
     );
 
     logger.success(
