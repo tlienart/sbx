@@ -1,7 +1,7 @@
 # Detect Bun - fall back to home directory installation if not in PATH
 BUN := $(shell command -v bun || echo $(HOME)/.bun/bin/bun)
 
-.PHONY: install setup clean test logs doctor check create list delete
+.PHONY: install setup clean test logs doctor check create list delete exec
 
 # Install pkgx and Bun if missing and setup the project
 install:
@@ -31,6 +31,11 @@ create: setup
 # List all sandboxes
 list:
 	./bin/sbx list
+
+# Execute a command or open a shell in a sandbox
+# Usage: make exec NAME="session1" [CMD="command"]
+exec:
+	./bin/sbx exec $(NAME) $(CMD)
 
 # Delete one or more sandboxes
 # Usage: make delete NAME="session1 session2"
