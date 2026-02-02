@@ -28,23 +28,35 @@ export async function provisionSession(instanceName: string, tools?: string): Pr
   // Configure pkgx in session profiles.
   // PKGX_YES=1 allows non-interactive tool installation on first use.
   // We explicitly add /usr/local/bin to PATH to ensure pkgx is found.
-  const pathCmd = 'export PATH="/usr/local/bin:$PATH"';
-  const setupCmd = 'eval "$(pkgx --setup)"';
-  const yesCmd = 'export PKGX_YES=1';
 
-  const profileCmds = [
-    // zsh
-    `grep -q "pkgx --setup" ~/.zprofile 2>/dev/null || (echo '${pathCmd}' >> ~/.zprofile && echo '${setupCmd}' >> ~/.zprofile)`,
-    `grep -q "PKGX_YES" ~/.zprofile 2>/dev/null || echo '${yesCmd}' >> ~/.zprofile`,
-    `grep -q "pkgx --setup" ~/.zshenv 2>/dev/null || (echo '${pathCmd}' >> ~/.zshenv && echo '${setupCmd}' >> ~/.zshenv)`,
+  const profileFiles = ['.zprofile', '.zshenv', '.bash_profile', '.bashrc'];
 
-    // bash
-    `grep -q "pkgx --setup" ~/.bash_profile 2>/dev/null || (echo '${pathCmd}' >> ~/.bash_profile && echo '${setupCmd}' >> ~/.bash_profile)`,
-    `grep -q "PKGX_YES" ~/.bash_profile 2>/dev/null || echo '${yesCmd}' >> ~/.bash_profile`,
-    `grep -q "pkgx --setup" ~/.bashrc 2>/dev/null || (echo '${pathCmd}' >> ~/.bashrc && echo '${setupCmd}' >> ~/.bashrc)`,
-  ].join(' && ');
+  for (const file of profileFiles) {
+    try {
+      // Use a single quoted HEREDOC to avoid expansion issues
+      const setupScript = `
+export PATH="/usr/local/bin:$PATH"
+eval "$(pkgx --setup)"
+export PKGX_YES=1
+`.trim();
 
-  await runAsUser(sessionUser, `bash -c '${profileCmds}'`);
+      // We use a temporary script file to avoid quoting issues with su -c
+      const tmpFile = `/tmp/sbx_setup_${instanceName}_${file.replace('.', '')}.sh`;
+      await run('bash', ['-c', `cat <<'EOF' > ${tmpFile}\n${setupScript}\nEOF`]);
+      await run('chmod', ['644', tmpFile]);
+
+      // Append to profile if not already there
+      await runAsUser(
+        sessionUser,
+        `grep -q "pkgx --setup" ~/${file} 2>/dev/null || cat ${tmpFile} >> ~/${file}`,
+      );
+
+      // Clean up
+      await run('rm', [tmpFile]);
+    } catch (err: any) {
+      logger.debug(`Failed to configure ${file}: ${err.message}`);
+    }
+  }
 
   // If specific tools are requested, we pre-cache them to make first use instant.
   if (tools) {
@@ -55,8 +67,9 @@ export async function provisionSession(instanceName: string, tools?: string): Pr
     if (toolsList.length > 0) {
       logger.info(`Pre-caching tools for ${sessionUser}: ${toolsList.join(', ')}...`);
       // pkgx +tool -- true downloads the tool without executing anything significant.
-      const cacheCmd = toolsList.map((t) => `pkgx +${t} -- true`).join(' && ');
-      await runAsUser(sessionUser, `bash -c '${cacheCmd}'`);
+      for (const tool of toolsList) {
+        await runAsUser(sessionUser, `pkgx +${tool} -- true`);
+      }
     }
   }
 }
