@@ -8,18 +8,19 @@ async function stage5() {
   const TEST_NAME = 'stage-test';
   const username = await getSessionUsername(TEST_NAME);
 
-  console.log(chalk.bold.cyan('\n🛠️ Stage 5: Toolchain Guarantee\n'));
+  console.log(chalk.bold.cyan('\n🛠️ Stage 5: Toolchain Guarantee (pkgx)\n'));
 
   try {
-    logger.info(`Provisioning tools (gh, jq, uv, python, bun) for ${username}...`);
-    await provisionSession(TEST_NAME);
+    logger.info(`Provisioning pkgx toolchain for ${username}...`);
+    // We pre-cache standard tools for the test to ensure they work
+    await provisionSession(TEST_NAME, 'jq,gh,uv,bun');
     logger.success('Toolchain provisioned successfully.');
 
-    logger.info('Verifying tools via login shell...');
+    logger.info('Verifying pkgx and tools via login shell...');
     // We use a login shell to ensure profile files are sourced
     const verify = await runAsUser(
       username,
-      'zsh -l -c "gh --version && jq --version && uv --version && python3 --version && bun --version"',
+      'zsh -l -c "pkgx --version && pkgx jq --version && pkgx gh --version && pkgx uv --version && pkgx bun --version"',
     );
 
     logger.success(
@@ -33,7 +34,7 @@ async function stage5() {
     );
 
     console.log(
-      chalk.bold.green('\n✅ Stage 5 Passed: Full toolchain is provisioned and isolated.'),
+      chalk.bold.green('\n✅ Stage 5 Passed: pkgx toolchain is provisioned and functional.'),
     );
   } catch (err: any) {
     logger.error(`Stage 5 Failed: ${err.message}`);

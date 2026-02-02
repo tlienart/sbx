@@ -16,10 +16,6 @@ export async function createCommand(
     process.exit(1);
   }
 
-  if (options.tools) {
-    logger.warn('The --tools flag is currently disabled as Homebrew support has been removed.');
-  }
-
   // Pre-flight sudo check
   await ensureSudo();
 
@@ -60,8 +56,11 @@ export async function createCommand(
         await sudoers.setup(instance);
 
         // Step 3: Provision tools
-        bar.update(50, { step: 'Provisioning tools (gh, jq, uv, python, bun)...' });
-        await provisionSession(instance);
+        const toolMsg = options.tools
+          ? `Provisioning tools (${options.tools})...`
+          : 'Provisioning toolchain (pkgx)...';
+        bar.update(50, { step: toolMsg });
+        await provisionSession(instance, options.tools);
 
         bar.update(100, { step: 'Finished!' });
       } catch (err: any) {

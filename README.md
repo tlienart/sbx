@@ -3,7 +3,7 @@
 > [!NOTE]
 > This project is a derived work from [AkihiroSuda/alcless](https://github.com/AkihiroSuda/alcless).
 
-Isolated macOS user sessions with pre-baked tools. Fast, focused, and one-shot.
+Isolated macOS user sessions with a fast, on-demand toolchain. Fast, focused, and one-shot.
 
 ## Why Sbx?
 
@@ -12,7 +12,7 @@ When running autonomous coding agents on your local machine, there's always a ri
 **Sbx** solves this by leveraging macOS's native `sysadminctl` to create several lightweight, isolated sandboxes. This allows you to:
 *   **Limit Risk**: Run agents in a dedicated user session where they can't touch your main home directory.
 *   **Keep it Lightweight**: Unlike heavy VMs or Docker containers that struggle with macOS integration, Sbx uses native system accounts.
-*   **Ready to Code**: Each session comes pre-provisioned with a modern development toolchain.
+*   **Ready to Code**: Each session comes pre-configured with a modern, on-demand toolchain powered by `pkgx`.
 
 ## Quick Start
 
@@ -31,6 +31,7 @@ The easiest way to interact with Sbx is via `make`:
 | Action | Command |
 | :--- | :--- |
 | **Create** | `make create NAME="sbox1 sbox2"` |
+| **Create with Tools** | `make create NAME="sbox1" TOOLS="gh,jq,ffmpeg"` |
 | **List** | `make list` |
 | **Delete** | `make delete NAME="sbox1"` |
 | **Clean All** | `make clean` |
@@ -39,23 +40,26 @@ The easiest way to interact with Sbx is via `make`:
 > [!TIP]
 > To enter a session manually: `./bin/sbx exec sbox1`. This starts an interactive `zsh` session as the sandbox user.
 
-## Pre-installed Toolchain
+## Toolchain (Powered by pkgx)
 
-Every session is automatically provisioned with:
-*   **GitHub CLI (`gh`)**: For repository interactions.
-*   **`jq`**: For JSON processing.
-*   **Python 3.12**: Managed via `uv`.
-*   **UV**: Ultra-fast Python package installer and resolver.
-*   **Bun**: Fast JavaScript runtime and package manager.
+Every session is automatically configured with **[pkgx](https://pkgx.sh)**. 
+
+*   **Fast Provisioning**: Since tools are fetched on-demand, creating a new session takes less than 5 seconds.
+*   **Thousands of Tools**: You can run almost any developer tool (e.g., `gh`, `jq`, `python`, `node`, `go`, `rust`, `ffmpeg`) just by typing its name.
+*   **Seamless Integration**: `pkgx` is integrated into the shell. The first time you run a tool, it's transparently downloaded and executed.
 
 ## Customization
 
-### Adding more tools
-If you need to include additional tools (e.g., `ffmpeg`, `go`, `rust`) in every new session, you can modify the provisioning script:
+### Requesting specific tools
+If you want certain tools to be pre-cached (so they are available instantly on first use), use the `TOOLS` variable:
 
-1.  Open `src/lib/provision.ts`.
-2.  Update the `installCmd` array with your desired installation commands (usually via `curl` or `brew` if available).
-3.  New sandboxes created after this change will include your new tools.
+```bash
+# Via make
+make create NAME="mysession" TOOLS="gh,jq,python,ffmpeg"
+
+# Via CLI
+./bin/sbx create mysession --tools "gh,jq,python,ffmpeg"
+```
 
 ## Security & Permissions
 

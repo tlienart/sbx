@@ -35,14 +35,14 @@ jobs:
       - name: Integration Smoke Test
         run: |
           set -eux
-          # 1. Create a session
-          sudo ./bin/sbx create ci-smoke
+          # 1. Create a session with tools
+          sudo ./bin/sbx create ci-smoke --tools "gh,jq,uv,bun"
           
           # 2. List sessions
           ./bin/sbx list | grep ci-smoke
           
-          # 3. Exec tools
-          sudo ./bin/sbx exec ci-smoke "gh --version && jq --version && uv --version && bun --version"
+          # 3. Exec tools via pkgx
+          sudo ./bin/sbx exec ci-smoke "pkgx gh --version && pkgx jq --version && pkgx uv --version && pkgx bun --version"
           
           # 4. Cleanup
           sudo ./bin/sbx delete ci-smoke
