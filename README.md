@@ -58,12 +58,53 @@ For maximum security, it is recommended to create a **Fine-grained Personal Acce
     *   **Metadata**: Read-only
 5.  This allows the sandbox (via the host bridge) to open issues, PRs, and comment, but it cannot delete repositories or access your private data outside the selection.
 
-### OpenCode Integration
-You can specify the LLM provider when creating a sandbox:
+## Demo Walkthrough
+
+Follow these steps to see Sbx's sandboxed authentication in action.
+
+### 1. Set Host Secrets
+On your **host machine**, set the environment variables that Sbx will use to bridge authentication:
+
 ```bash
-make create NAME="mybox" provider="google"
+export SBX_GITHUB_TOKEN="ghp_your_token_here"
+export SBX_GOOGLE_API_KEY="AIzaSyYourKeyHere"
 ```
-The sandbox will be automatically configured to use the host-side proxy for that provider.
+
+### 2. Create and Enter the Sandbox
+Create a new sandbox named `demo` configured for the `google` provider:
+
+```bash
+make create name="demo" provider="google"
+make exec name="demo"
+```
+
+### 3. Verify GitHub Authentication
+Inside the sandbox, check your GitHub status:
+
+```bash
+gh auth status
+```
+*Result:* You'll see you are authenticated via the host's token, even though the token itself is not in the sandbox.
+
+### 4. Verify OpenCode (LLM) Access
+Try running a prompt with OpenCode:
+
+```bash
+opencode "say hello"
+```
+*Result:* The request is proxied to the host, which injects your `SBX_GOOGLE_API_KEY` before forwarding it to Google.
+
+### 5. Confirm No Secrets are Exposed
+**Crucially, your secrets never leave your host user space.** Verify that your sensitive keys are nowhere to be found inside the sandbox:
+
+```bash
+# Check environment variables
+env | grep -E "SBX|GOOGLE|GITHUB"
+
+# Check OpenCode configuration
+cat ~/.config/opencode/opencode.json
+```
+*Result:* You will see `SBX_PROXY_ACTIVE` instead of your actual keys. 
 
 ## Common Commands
 
@@ -81,17 +122,10 @@ The easiest way to interact with Sbx is via `make`:
 
 ...
 
-### OpenCode Integration
-You can specify the LLM provider when creating a sandbox:
-```bash
-make create name="mybox" provider="google"
-```
-
-
 ### 2. Run a Single Command
 To run a command and return immediately:
 ```bash
-make exec NAME="sbox1" CMD="ls -la"
+make exec name="sbox1" cmd="ls -la"
 # or
 ./bin/sbx exec sbox1 "ls -la"
 ```
@@ -99,7 +133,7 @@ make exec NAME="sbox1" CMD="ls -la"
 ### 3. Sudo Access
 The sandbox user has full `sudo` privileges. You can perform administrative tasks inside the session without affecting the host:
 ```bash
-make exec NAME="sbox1" CMD="sudo port install top"
+make exec name="sbox1" cmd="sudo port install top"
 ```
 
 ### 4. Exit
@@ -120,7 +154,7 @@ If you want certain tools to be pre-cached (so they are available instantly on f
 
 ```bash
 # Via make
-make create NAME="mysession" TOOLS="gh,jq,python,ffmpeg"
+make create name="mysession" tools="gh,jq,python,ffmpeg"
 
 # Via CLI
 ./bin/sbx create mysession --tools "gh,jq,python,ffmpeg"
