@@ -89,5 +89,10 @@ bun run typecheck
 bun run check
 ```
 
+## Credits
+
+This project is a TypeScript/Bun-based derivative of [alcless](https://github.com/AkihiroSuda/alcless), originally created by [Akihiro Suda](https://github.com/AkihiroSuda).
+
 ## License
-Apache 2.0
+
+MIT
