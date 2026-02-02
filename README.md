@@ -18,12 +18,10 @@ When running autonomous coding agents on your local machine, there's always a ri
 
 ### Installation
 
-Ensure you have [Bun](https://bun.sh) installed.
-
 ```bash
-git clone https://github.com/AkihiroSuda/sbx.git
+git clone https://github.com/tlienart/sbx.git
 cd sbx
-make setup
+make install
 ```
 
 ### Common Commands
@@ -39,7 +37,7 @@ The easiest way to interact with Sbx is via `make`:
 | **Test** | `make test` |
 
 > [!TIP]
-> To enter a session manually: `./bin/sbx exec sbox1`
+> To enter a session manually: `./bin/sbx exec sbox1`. This starts an interactive `zsh` session as the sandbox user.
 
 ## Pre-installed Toolchain
 
@@ -62,11 +60,15 @@ If you need to include additional tools (e.g., `ffmpeg`, `go`, `rust`) in every 
 ## Security & Permissions
 
 ### Suppressing the "Administration" Popup
-On modern macOS, `sysadminctl` triggers a GUI prompt. To run `sbx` silently:
+On modern macOS, `sysadminctl` requires elevated permissions to manage system accounts. By default, this triggers a GUI prompt for every sandbox created. To allow Sbx to run silently, you must grant your terminal **Full Disk Access**:
+
 1.  Open **System Settings**.
 2.  Go to **Privacy & Security** > **Full Disk Access**.
 3.  Add and toggle your Terminal (e.g., **Ghostty**, **Terminal.app**, or **iTerm2**) to **ON**.
 4.  Restart your terminal.
+
+> [!NOTE]
+> Granting Full Disk Access is a standard requirement for system management tools on macOS. For more context, see [Apple's official documentation on controlling access to files and folders](https://support.apple.com/guide/mac-help/control-access-to-files-and-folders-on-mac-mchl534c31f1/mac).
 
 ## Technical Details
 
@@ -84,7 +86,7 @@ Sbx uses the native macOS `sysadminctl` utility to create a genuine, standard ma
 *   **Resource Management**: A compromised or rogue agent inside a sandbox can still consume 100% of your CPU/GPU or be used to mine cryptocurrency.
 *   **No IP Isolation**: Since there is no network isolation, any malicious activity will appear as coming from your machine's IP address.
 
-In summary, Sbx is intended to make running coding agents "safer" than "yolo" mode on your main account, without the friction and performance cost of a full Virtual Machine.
+In summary, Sbx is intended to make running coding agents **safer when running in "yolo" mode** on your main account, providing a disposable environment with full sudo access while keeping your host user space protected.
 
 ## License
 

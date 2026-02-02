@@ -1,4 +1,20 @@
-.PHONY: clean test setup logs doctor check create list delete
+# Detect Bun - fall back to home directory installation if not in PATH
+BUN := $(shell command -v bun || echo $(HOME)/.bun/bin/bun)
+
+.PHONY: install setup clean test logs doctor check create list delete
+
+# Install Bun if missing and setup the project
+install:
+	@if ! command -v bun >/dev/null 2>&1 && [ ! -f $(HOME)/.bun/bin/bun ]; then \
+		echo "📦 Bun not found. Installing Bun..."; \
+		curl -fsSL https://bun.sh/install | bash; \
+	fi
+	@$(MAKE) setup
+
+# Setup environment and install dependencies
+setup:
+	@mkdir -p .sbx/logs
+	@$(BUN) install
 
 # Standard user prefix
 USER_PREFIX := sbx_$(shell whoami)_
@@ -33,26 +49,21 @@ clean:
 
 # Check system health and permissions
 doctor:
-	@bun scripts/doctor.ts
+	@$(BUN) scripts/doctor.ts
 
 # Run the staged verification suite
 test: setup
 	@echo "🧪 Running staged verification suite..."
-	@bun scripts/stage1-auth.ts
-	@bun scripts/stage2-creation.ts
-	@bun scripts/stage3-propagation.ts
-	@bun scripts/stage4-sudoers.ts
-	@bun scripts/stage5-provision.ts
-	@bun scripts/stage6-cleanup.ts
-
-# Setup environment
-setup:
-	@mkdir -p .sbx/logs
-	@bun install
+	@$(BUN) scripts/stage1-auth.ts
+	@$(BUN) scripts/stage2-creation.ts
+	@$(BUN) scripts/stage3-propagation.ts
+	@$(BUN) scripts/stage4-sudoers.ts
+	@$(BUN) scripts/stage5-provision.ts
+	@$(BUN) scripts/stage6-cleanup.ts
 
 # Lint and format check
 check:
-	@bun run check
+	@$(BUN) run check
 
 # View real-time system traces
 logs:
