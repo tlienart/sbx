@@ -20,7 +20,7 @@ async function stage5() {
     // We use a login shell to ensure profile files are sourced
     const verify = await runAsUser(
       username,
-      'zsh -l -c "pkgx --version && jq --version && gh --version && uv --version && bun --version"',
+      'zsh -l -c "pkgx --version && pkgx jq --version && pkgx gh --version && pkgx uv --version && pkgx bun --version"',
     );
 
     logger.success(
