@@ -1,0 +1,219 @@
+import { execSync } from 'node:child_process';
+import { serve } from 'bun';
+import { SbxBridge } from '../lib/bridge.ts';
+import { ensureSudo, runAsUser } from '../lib/exec.ts';
+import { logger } from '../lib/logger.ts';
+import { provisionSession } from '../lib/provision.ts';
+import { createSessionUser, getHostUser, getSessionUsername, isUserActive } from '../lib/user.ts';
+
+interface ServeOptions {
+  port: string;
+}
+
+export async function serveCommand(options: ServeOptions) {
+  const port = Number.parseInt(options.port, 10);
+  const hostUser = await getHostUser();
+  const bridge = new SbxBridge(hostUser);
+  const isMock = process.env.SBX_MOCK === '1';
+
+  logger.info(`Starting SBX API server on port ${port}${isMock ? ' (MOCK MODE)' : ''}...`);
+
+  try {
+    if (!isMock) {
+      await ensureSudo();
+    }
+    await bridge.start();
+    logger.success('Host bridge started.');
+  } catch (err: any) {
+    logger.error(`Failed to start bridge: ${err.message}`);
+    process.exit(1);
+  }
+
+  const server = serve({
+    port,
+    async fetch(req) {
+      const url = new URL(req.url);
+
+      // --- /raw-exec ---
+      if (req.method === 'POST' && url.pathname === '/raw-exec') {
+        try {
+          const body = (await req.json()) as { instance?: string; command?: string };
+          const { instance, command } = body;
+
+          if (!instance || !command) {
+            return Response.json({ error: 'Missing instance or command' }, { status: 400 });
+          }
+
+          const username = await getSessionUsername(instance);
+
+          if (!isMock && !(await isUserActive(username))) {
+            logger.info(`Instance "${instance}" not active. Auto-provisioning...`);
+            await createSessionUser(instance);
+            await provisionSession(instance);
+          }
+
+          if (!isMock) {
+            const sandboxLogDir = `/Users/${username}/.sbx/logs`;
+            try {
+              execSync(
+                `sudo su - ${username} -c "mkdir -p ${sandboxLogDir} && nohup api_bridge.py 9999 >${sandboxLogDir}/api_bridge.log 2>&1 &"`,
+              );
+            } catch {
+              /* ignore */
+            }
+          }
+
+          logger.info(`[API] Executing in ${instance}: ${command}`);
+
+          const result = isMock
+            ? await (async () => {
+                const { execa } = await import('execa');
+                const proc = await execa('bash', ['-c', command], {
+                  env: {
+                    ...process.env,
+                    BRIDGE_SOCK: bridge.getSocketPaths().command,
+                    PROXY_SOCK: bridge.getSocketPaths().proxy,
+                  },
+                  all: true,
+                  reject: false,
+                });
+                return { stdout: proc.stdout, stderr: proc.stderr, exitCode: proc.exitCode ?? 0 };
+              })()
+            : await (async () => {
+                const env = {
+                  BRIDGE_SOCK: bridge.getSocketPaths().command,
+                  PROXY_SOCK: bridge.getSocketPaths().proxy,
+                };
+                logger.debug(`[API] Environment: ${JSON.stringify(env)}`);
+                return runAsUser(username, command, { env });
+              })();
+
+          return Response.json({
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: result.exitCode,
+          });
+        } catch (err: any) {
+          logger.error(`[API] Error: ${err.message}`);
+          return Response.json({ error: err.message }, { status: 500 });
+        }
+      }
+
+      // --- /execute ---
+      if (req.method === 'POST' && url.pathname === '/execute') {
+        try {
+          const body = (await req.json()) as {
+            instance?: string;
+            prompt?: string;
+            mode?: string;
+            provider?: string;
+            sessionId?: string;
+          };
+          const { instance, prompt, mode = 'build', provider = 'google', sessionId } = body;
+
+          if (!instance || !prompt) {
+            return Response.json({ error: 'Missing instance or prompt' }, { status: 400 });
+          }
+
+          const username = await getSessionUsername(instance);
+
+          if (!isMock && !(await isUserActive(username))) {
+            logger.info(`Instance "${instance}" not active. Auto-provisioning...`);
+            await createSessionUser(instance);
+            await provisionSession(instance, undefined, provider);
+          }
+
+          if (!isMock) {
+            const sandboxLogDir = `/Users/${username}/.sbx/logs`;
+            try {
+              execSync(
+                `sudo su - ${username} -c "mkdir -p ${sandboxLogDir} && nohup api_bridge.py 9999 >${sandboxLogDir}/api_bridge.log 2>&1 &"`,
+              );
+            } catch {
+              /* ignore */
+            }
+          }
+
+          logger.info(
+            `[API] OpenCode executing in ${instance} (mode: ${mode}, session: ${sessionId || 'new'}): ${prompt}`,
+          );
+
+          let opencodeCmd = `opencode run --agent ${mode} --format json ${JSON.stringify(prompt)}`;
+          if (sessionId) {
+            opencodeCmd += ` --session ${sessionId}`;
+          }
+
+          const result = isMock
+            ? await (async () => {
+                const { execa } = await import('execa');
+                const proc = await execa('bash', ['-c', opencodeCmd], {
+                  env: {
+                    ...process.env,
+                    BRIDGE_SOCK: bridge.getSocketPaths().command,
+                    PROXY_SOCK: bridge.getSocketPaths().proxy,
+                  },
+                  all: true,
+                  reject: false,
+                });
+                return { stdout: proc.stdout, stderr: proc.stderr, exitCode: proc.exitCode ?? 0 };
+              })()
+            : await (async () => {
+                const env = {
+                  BRIDGE_SOCK: bridge.getSocketPaths().command,
+                  PROXY_SOCK: bridge.getSocketPaths().proxy,
+                };
+                logger.debug(`[API] Environment: ${JSON.stringify(env)}`);
+                return runAsUser(username, opencodeCmd, { env });
+              })();
+
+          // Parse JSON output from OpenCode
+          let finalOutput = '';
+          let finalSessionId = sessionId;
+          const lines = result.stdout.split('\n');
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const json = JSON.parse(line);
+              if (json.sessionID) finalSessionId = json.sessionID;
+              if (json.type === 'text' && json.part?.text) {
+                finalOutput += json.part.text;
+              }
+            } catch {
+              // Not a JSON line, maybe some other output
+            }
+          }
+
+          // If finalOutput is still empty (e.g. not in JSON format or error), fallback to raw stdout
+          if (!finalOutput && result.stdout) {
+            finalOutput = result.stdout;
+          }
+
+          return Response.json({
+            output: finalOutput,
+            stdout: result.stdout,
+            stderr: result.stderr,
+            exitCode: result.exitCode,
+            sessionId: finalSessionId,
+          });
+        } catch (err: any) {
+          logger.error(`[API] Error: ${err.message}`);
+          return Response.json({ error: err.message }, { status: 500 });
+        }
+      }
+
+      return new Response('Not Found', { status: 404 });
+    },
+  });
+
+  logger.success(`Server listening at http://localhost:${server.port}`);
+
+  const cleanup = () => {
+    logger.info('Shutting down server...');
+    bridge.stop();
+    server.stop();
+    process.exit(0);
+  };
+
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
+}

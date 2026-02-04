@@ -153,5 +153,12 @@ export async function runAsUser(
   command: string,
   options: ExecOptions = {},
 ): Promise<RunResult> {
-  return sudoRun('su', ['-', username, '-c', command], options);
+  let finalCommand = command;
+  if (options.env) {
+    const envExports = Object.entries(options.env)
+      .map(([k, v]) => `export ${k}=${JSON.stringify(v)}`)
+      .join('; ');
+    finalCommand = `${envExports}; ${command}`;
+  }
+  return sudoRun('su', ['-', username, '-c', finalCommand], options);
 }
