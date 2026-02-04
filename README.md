@@ -179,15 +179,20 @@ On modern macOS, `sysadminctl` requires elevated permissions to manage system ac
 Sbx uses the native macOS `sysadminctl` utility to create a genuine, standard macOS user account for each sandbox. This leverages the operating system's built-in process and file isolation.
 
 ### Separation & Security Model
-*   **File System**: Each sandbox has its own home directory (`/Users/sbx_...`) with permissions set to `700`. It cannot access your host user's files (provided your home directory has standard restrictive permissions).
+*   **File System**: Each sandbox has its own home directory (`/Users/sbx_...`) with permissions set to `700`. It cannot access your host user's files provided your host home directory is properly protected (run `chmod 700 ~` on your host to be sure).
 *   **Processes**: Processes running inside the sandbox are owned by the sandbox user. They can see system-wide processes but cannot modify or terminate them.
-*   **Network**: Sandboxes have **full internet access** by default. There is no network-level sandboxing or firewalling included.
+*   **Network**: Sandboxes have **full internet access** by default. There is no network-level sandboxing or firewalling included. Malicious activity will appear as coming from your IP.
+*   **Secrets**: Secrets (API keys, GitHub tokens) are **never stored or visible** inside the sandbox. They stay on the host and are used by the Bridge to sign requests on behalf of the sandbox.
 
 ### What Sbx is NOT
-*   **Not a Bunker**: Sbx is designed to be a "seatbelt" to prevent common "footguns" (like an autonomous agent accidentally deleting your home directory or messing up your config files). It does not provide "hardcore" security against determined attackers.
-*   **No Kernel Protection**: It does not protect against kernel-level exploits or hardware-level vulnerabilities.
-*   **Resource Management**: A compromised or rogue agent inside a sandbox can still consume 100% of your CPU/GPU or be used to mine cryptocurrency.
-*   **No IP Isolation**: Since there is no network isolation, any malicious activity will appear as coming from your machine's IP address.
+*   **Not a Bunker**: Sbx is a "seatbelt" to prevent common "footguns" (like an agent deleting your files). It is not a hardened container for running untrusted malware.
+*   **No Kernel Protection**: It does not protect against kernel-level exploits.
+*   **Resource Management**: A rogue agent can still consume 100% of your CPU/GPU or mine cryptocurrency.
+*   **No IP Isolation**: Any network activity will use your host's network identity.
+
+### Sudo Access
+By default, the host user can run commands as the sandbox user without a password. Inside the sandbox, the user is a **standard macOS user**. While they can use `sudo` if configured, the primary way to perform administrative tasks is via the host's `sbx exec` command.
+
 
 In summary, Sbx is intended to make running coding agents **safer when running in "yolo" mode** on your main account, providing a disposable environment with full sudo access while keeping your host user space protected.
 

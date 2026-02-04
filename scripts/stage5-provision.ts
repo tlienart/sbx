@@ -36,8 +36,9 @@ async function stage5() {
     console.log(
       chalk.bold.green('\n✅ Stage 5 Passed: pkgx toolchain is provisioned and functional.'),
     );
-  } catch (err: any) {
-    logger.error(`Stage 5 Failed: ${err.message}`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error(`Stage 5 Failed: ${msg}`);
     process.exit(1);
   }
 }

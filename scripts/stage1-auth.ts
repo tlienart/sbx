@@ -16,8 +16,9 @@ async function stage1() {
     logger.success(`sysadminctl found at: ${check.stdout.trim()}`);
 
     console.log(chalk.bold.green('\n✅ Stage 1 Passed: Authentication is ready.'));
-  } catch (err: any) {
-    logger.error(`Stage 1 Failed: ${err.message}`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error(`Stage 1 Failed: ${msg}`);
     process.exit(1);
   }
 }

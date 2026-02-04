@@ -107,7 +107,7 @@ export async function run(
   }, 5000);
 
   try {
-    const result = await (subprocess as any);
+    const result = await subprocess;
 
     // Log complete output to trace
     if (result.all) {
@@ -120,9 +120,9 @@ export async function run(
       exitCode: result.exitCode ?? 0,
       command: result.command ?? '',
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     const result = error as Result;
-    if (error.timedOut) {
+    if (error && typeof error === 'object' && 'timedOut' in error && error.timedOut) {
       trace(`TIMEOUT: ${commandStr} after ${timeoutMs}ms`);
       throw new Error(`Command timed out after ${timeoutMs}ms: ${commandStr}. 
 HINT: This usually happens when macOS is waiting for a GUI permission click. 

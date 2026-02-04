@@ -1,8 +1,9 @@
-import { chmodSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
 import { join } from 'node:path';
 import { type Socket, type SocketListener, listen, spawn } from 'bun';
+
 import { logger } from './logger.ts';
 import 'dotenv/config';
 
@@ -120,10 +121,10 @@ export class SbxBridge {
         const url = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
         logger.debug(`[Proxy] Incoming request: ${req.method} ${url.pathname}`);
 
-        let targetHost: string | null = null;
-        let targetPath: string | null = null;
-        let authHeader: string | null = null;
-        let authValue: string | null = null;
+        let targetHost: string | undefined;
+        let targetPath: string | undefined;
+        let authHeader: string | undefined;
+        let authValue: string | undefined;
         let isGoogle = false;
         let providerName = '';
 

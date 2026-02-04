@@ -63,10 +63,11 @@ export async function createCommand(
         await provisionSession(instance, options.tools, options.provider);
 
         bar.update(100, { step: 'Finished!' });
-      } catch (err: any) {
+      } catch (err: unknown) {
         bar.update(0, { step: chalk.red('Failed!') });
         multibar.stop();
-        logger.error(`Error creating instance "${instance}": ${err.message}`);
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error(`Error creating instance "${instance}": ${msg}`);
         process.exit(1);
       }
     }),

@@ -47,8 +47,9 @@ async function ensureHostAccessToSandbox(sessionUser: string): Promise<void> {
     // but to keep it fast we only do it for the top level or known important dirs.
     // Actually, let's just do a shallow ACL grant on existing top-level items.
     await sudoRun('bash', ['-c', `find ${homeDir} -maxdepth 1 -exec chmod +a "${acl}" {} +`]);
-  } catch (err: any) {
-    logger.warn(`Failed to set ACLs on ${homeDir}: ${err.message}. Bridged commands might fail.`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn(`Failed to set ACLs on ${homeDir}: ${msg}. Bridged commands might fail.`);
   }
 }
 
@@ -109,8 +110,9 @@ pkgx --setup 2>/dev/null | source /dev/stdin 2>/dev/null || true
         `grep -q "PKGX_YES" ~/${file} 2>/dev/null || cat ${tmpFile} >> ~/${file}`,
       );
       await run('rm', [tmpFile]);
-    } catch (err: any) {
-      logger.debug(`Failed to configure ${file}: ${err.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.debug(`Failed to configure ${file}: ${msg}`);
     }
   }
 
@@ -133,9 +135,10 @@ pkgx --setup 2>/dev/null | source /dev/stdin 2>/dev/null || true
   for (const tool of allTools) {
     try {
       await runAsUser(sessionUser, `pkgx +${tool} -- true`);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
       logger.warn(
-        `Failed to pre-cache tool "${tool}": ${err.message}. It may still work if available in the sandbox.`,
+        `Failed to pre-cache tool "${tool}": ${msg}. It may still work if available in the sandbox.`,
       );
     }
   }

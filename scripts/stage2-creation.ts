@@ -1,11 +1,6 @@
 import chalk from 'chalk';
 import { logger } from '../src/lib/logger.ts';
-import {
-  createSessionUser,
-  getSessionUsername,
-  isUserActive,
-  userExists,
-} from '../src/lib/user.ts';
+import { createSessionUser, getSessionUsername, userExists } from '../src/lib/user.ts';
 
 async function stage2() {
   const TEST_NAME = 'stage-test';
@@ -31,8 +26,8 @@ async function stage2() {
     }
 
     console.log(chalk.bold.green('\n✅ Stage 2 Passed: User record created and verified.'));
-  } catch (err: any) {
-    logger.error(`Stage 2 Failed: ${err.message}`);
+  } catch (err: unknown) {
+    logger.error(`Stage 2 Failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { type Subprocess, spawn } from 'bun';
-import { getHostUser, getSessionUsername } from '../lib/user.ts';
+import { getHostUser } from '../lib/user.ts';
 
 let serverProcess: Subprocess;
 const PORT = 3001;
@@ -22,7 +22,7 @@ beforeAll(async () => {
         headers: { 'Content-Type': 'application/json' },
       });
       if (res.status === 200) break;
-    } catch (e) {
+    } catch (e: unknown) {
       await new Promise((r) => setTimeout(r, 1000));
     }
   }
