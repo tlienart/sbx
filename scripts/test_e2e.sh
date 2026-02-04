@@ -14,19 +14,51 @@ BOLD='\033[1m'
 
 echo -e "${BOLD}🚀 Starting SBX End-to-End Verification Suite${NC}"
 
+# Pre-flight sudo authentication
+echo -n "🔑 Checking sudo... "
+sudo -n -v 2>/dev/null || echo -e "${RED}Warning: sudo session not active. Ensure you run this in an interactive terminal or with cached credentials.${NC}"
+echo -e "${GREEN}Done!${NC}"
+
+# Background sudo heartbeat to keep background server authenticated
+(while true; do sudo -n -v; sleep 30; done) >/dev/null 2>&1 &
+HEARTBEAT_PID=$!
+
+# Aggressive pre-cleanup for solid state
+echo -n "🧹 Pre-cleanup... "
+./bin/sbx delete verify e2e-alpha e2e-beta > /dev/null 2>&1 || true
+pkill -f api_bridge.py 2>/dev/null || true
+# Cooling period for macOS filesystem/opendirectoryd
+sleep 2
+echo -e "${GREEN}Done!${NC}"
+
 # Cleanup on exit
 cleanup() {
   echo -e "\n${BOLD}🧹 Cleaning up...${NC}"
+  
+  if [ -n "$HEARTBEAT_PID" ]; then
+    disown $HEARTBEAT_PID 2>/dev/null || true
+    kill $HEARTBEAT_PID 2>/dev/null || true
+  fi
+  
   if [ -n "$SERVER_PID" ]; then
+    disown $SERVER_PID 2>/dev/null || true
     kill $SERVER_PID 2>/dev/null || true
   fi
+  
   # Give it a moment to stop
   sleep 1
   
   # Delete test instances explicitly
   ./bin/sbx delete verify e2e-alpha e2e-beta > /dev/null 2>&1 || true
   
+  # Kill any leaked bridge processes
+  pkill -f api_bridge.py 2>/dev/null || true
+  
   ./bin/sbx cleanup > /dev/null 2>&1
+
+  if [ "$TEST_SUCCESS" = "1" ]; then
+    echo -e "${GREEN}${BOLD}🚀 All done! Everything green 🟢✨${NC}"
+  fi
 }
 trap cleanup EXIT
 
@@ -71,9 +103,17 @@ run_test() {
     data=$(echo "$payload" | jq --arg inst "$inst" '. + {instance: $inst}')
   fi
 
-  RESPONSE=$(curl -s -X POST "$URL/$endpoint" \
+  # Execute with a 60s timeout to avoid indefinite hangs
+  RESPONSE=$(curl -s -m 60 -X POST "$URL/$endpoint" \
     -H "Content-Type: application/json" \
     -d "$data")
+
+  # Check if curl failed (e.g. timeout)
+  if [ $? -ne 0 ]; then
+    echo -e "${RED}FAILED${NC}"
+    echo "   Error: Request timed out or server unreachable"
+    exit 1
+  fi
 
   # Check if response is valid JSON
   if ! echo "$RESPONSE" | jq . > /dev/null 2>&1; then
@@ -145,8 +185,11 @@ run_test "OpenCode Explore mode" "$INSTANCE" "execute" \
 
 # 7. OpenCode Build
 run_test "OpenCode Build mode" "$INSTANCE" "execute" \
-  '{"prompt": "Create a file e2e_done.txt with content success", "mode": "build"}' \
-  ".output | contains(\"success\")"
+  '{"prompt": "Create a file e2e_done.txt with content success", "mode": "build"}'
+
+run_test "OpenCode Build mode (verify file)" "$INSTANCE" "raw-exec" \
+  '{"command": "cat e2e_done.txt"}' \
+  ".stdout | contains(\"success\")"
 
 # ------------------------------------------------------------------------------
 # MULTI-SESSION PARALLEL INDEPENDENCE
@@ -161,6 +204,9 @@ run_test "Alpha write to its own state" "$ALPHA" "raw-exec" \
   '{"command": "echo alpha-secret > $TMPDIR/alpha_state && cat $TMPDIR/alpha_state"}' \
   ".stdout | contains(\"alpha-secret\")"
 
+# Small delay to prevent opendirectoryd congestion during sequential creation
+sleep 2
+
 run_test "Beta write to its own state" "$BETA" "raw-exec" \
   '{"command": "echo beta-secret > $TMPDIR/beta_state && cat $TMPDIR/beta_state"}' \
   ".stdout | contains(\"beta-secret\")"
@@ -169,6 +215,8 @@ run_test "Beta write to its own state" "$BETA" "raw-exec" \
 run_test "Alpha bridge check (gh)" "$ALPHA" "raw-exec" \
   '{"command": "gh auth status"}' \
   ".stdout | contains(\"Logged in\")"
+
+sleep 1
 
 run_test "Beta bridge check (gh)" "$BETA" "raw-exec" \
   '{"command": "gh auth status"}' \
@@ -195,7 +243,20 @@ else
 fi
 wait $ALPHA_PID
 
-# 11. Selective Deletion
+# 11. Cross-sandbox isolation
+echo -e "\n${BOLD}🛡️ Testing Cross-Sandbox Isolation${NC}"
+ALPHA_USER=$(curl -s -X POST "$URL/raw-exec" -H "Content-Type: application/json" -d '{"instance": "'$ALPHA'", "command": "whoami"}' | jq -r .stdout | tr -d '\n')
+BETA_USER=$(curl -s -X POST "$URL/raw-exec" -H "Content-Type: application/json" -d '{"instance": "'$BETA'", "command": "whoami"}' | jq -r .stdout | tr -d '\n')
+
+run_test "Alpha isolation from Beta" "$ALPHA" "raw-exec" \
+  "{\"command\": \"ls /Users/$BETA_USER\"}" \
+  ".stderr | contains(\"Permission denied\")"
+
+run_test "Beta isolation from Alpha" "$BETA" "raw-exec" \
+  "{\"command\": \"ls /Users/$ALPHA_USER\"}" \
+  ".stderr | contains(\"Permission denied\")"
+
+# 12. Selective Deletion
 echo -n "🧪 Selective deletion (Delete Alpha, Beta stays)... "
 ./bin/sbx delete "$ALPHA" > /dev/null 2>&1
 
@@ -215,4 +276,4 @@ else
   exit 1
 fi
 
-echo -e "\n${GREEN}${BOLD}✨ All End-to-End tests passed successfully!${NC}"
+TEST_SUCCESS=1

@@ -179,7 +179,10 @@ On modern macOS, `sysadminctl` requires elevated permissions to manage system ac
 Sbx uses the native macOS `sysadminctl` utility to create a genuine, standard macOS user account for each sandbox. This leverages the operating system's built-in process and file isolation.
 
 ### Separation & Security Model
-*   **File System**: Each sandbox has its own home directory (`/Users/sbx_...`) with permissions set to `700`. It cannot access your host user's files provided your host home directory is properly protected (run `chmod 700 ~` on your host to be sure).
+*   **File System Isolation**: Each sandbox has its own home directory (`/Users/sbx_...`) locked to `700` (`drwx------`). This ensures that `Sandbox A` cannot list or read files from `Sandbox B`.
+*   **Host Bridge Access (ACLs)**: The host user is granted explicit access to sandbox homes via macOS Access Control Lists (ACLs). Inheritance flags (`file_inherit`, `directory_inherit`) ensure that any new files created by the sandbox remain accessible to the host bridge.
+*   **Host Home Protection**: Sandboxes cannot access your host user's files (provided your host home is `700`).
+*   **System `/tmp`**: Sandboxes have access to the system `/tmp` (standard macOS `1777`), which is required for many core tools to function. Sensitive data should never be stored in the system `/tmp`.
 *   **Processes**: Processes running inside the sandbox are owned by the sandbox user. They can see system-wide processes but cannot modify or terminate them.
 *   **Network**: Sandboxes have **full internet access** by default. There is no network-level sandboxing or firewalling included. Malicious activity will appear as coming from your IP.
 *   **Secrets**: Secrets (API keys, GitHub tokens) are **never stored or visible** inside the sandbox. They stay on the host and are used by the Bridge to sign requests on behalf of the sandbox.

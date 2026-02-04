@@ -50,9 +50,6 @@ async function runE2E() {
       logger.info(`Creating ${inst}...`);
       await createSessionUser(inst);
 
-      logger.info(`Setting up sudoers for ${inst}...`);
-      await sudoers.setup(inst);
-
       logger.info(`Provisioning ${inst} with default tools (gh, jq, uv, python, bun)...`);
       await provisionSession(inst);
 
@@ -137,6 +134,40 @@ async function runE2E() {
         } else {
           throw err;
         }
+      }
+
+      // 4. Home Directory Permissions (Must be 700)
+      const { stdout: permOut } = await run('stat', ['-f', '%A', `/Users/${username}`]);
+      if (permOut.trim() !== '700') {
+        throw new Error(
+          `PERMISSIONS LEAK: /Users/${username} has permissions ${permOut.trim()}, expected 700`,
+        );
+      }
+      logger.success(`Sandbox Audit [PERM]: /Users/${username} is 700.`);
+
+      // 5. Cross-Sandbox Isolation
+      for (const otherInst of testInstances) {
+        if (inst === otherInst) continue;
+        const otherUsername = `sbx_${hostUser}_${otherInst}`;
+        try {
+          await runAsUser(username, `ls /Users/${otherUsername}`);
+          throw new Error(`SANDBOX LEAK: User ${username} could read /Users/${otherUsername}`);
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          if (msg.includes('Permission denied')) {
+            logger.success(`Sandbox Audit [ISO]: ${inst} cannot access ${otherInst}.`);
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      // 6. Host Access (ACL Check) - Host should still be able to see files
+      try {
+        await run('ls', [`/Users/${username}`]);
+        logger.success(`Sandbox Audit [ACL]: Host can still access ${username} home.`);
+      } catch (err: unknown) {
+        throw new Error(`ACL FAILURE: Host cannot access /Users/${username}: ${err}`);
       }
     }
 
