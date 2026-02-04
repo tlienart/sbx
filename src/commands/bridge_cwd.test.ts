@@ -38,7 +38,44 @@ test('SbxBridge enforces sandbox-only CWD', async () => {
   })) as BridgeResponse;
 
   expect(result.type).toBe('error');
-  expect(result.message).toContain('Invalid or missing CWD');
+  expect(result.message).toContain('Invalid CWD');
+
+  bridge.stop();
+});
+
+test('SbxBridge prevents path traversal', async () => {
+  const hostUser = await getHostUser();
+  const bridge = new SbxBridge(hostUser);
+  await bridge.start();
+
+  const socketPath = bridge.getSocketPaths().command;
+
+  const result = (await new Promise((resolve, reject) => {
+    const client = connect(socketPath);
+    let response = '';
+    client.on('data', (data) => {
+      response += data.toString();
+    });
+    client.on('end', () => {
+      try {
+        resolve(JSON.parse(response));
+      } catch (e) {
+        reject(new Error(`Failed to parse response: ${response}`));
+      }
+    });
+    client.on('error', reject);
+    const request = {
+      command: 'ls',
+      args: [],
+      cwd: '/Users/sbx_demo/../../../etc', // Traversal
+    };
+    client.write(JSON.stringify(request));
+  })) as BridgeResponse;
+
+  expect(result.type).toBe('error');
+  expect(result.message).toContain('Invalid CWD');
+  // It should be resolved to /etc and thus fail the startsWith('/Users/sbx_') check
+  expect(result.message).toContain('/etc');
 
   bridge.stop();
 });

@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { type Socket, type SocketListener, listen, spawn } from 'bun';
 
 import { logger } from './logger.ts';
@@ -235,18 +235,21 @@ export class SbxBridge {
     logger.debug(`[Bridge] Spawning ${commandPath} with args: ${request.args.join(' ')}`);
 
     try {
-      if (!request.cwd || !request.cwd.startsWith('/Users/sbx_')) {
-        throw new Error(
-          `Invalid or missing CWD: ${request.cwd}. Commands must run inside a sandbox home.`,
-        );
+      if (!request.cwd) {
+        throw new Error('Missing CWD');
       }
 
-      if (!existsSync(request.cwd)) {
-        throw new Error(`CWD does not exist: ${request.cwd}`);
+      const resolvedCwd = resolve(request.cwd);
+      if (!resolvedCwd.startsWith('/Users/sbx_')) {
+        throw new Error(`Invalid CWD: ${resolvedCwd}. Commands must run inside a sandbox home.`);
+      }
+
+      if (!existsSync(resolvedCwd)) {
+        throw new Error(`CWD does not exist: ${resolvedCwd}`);
       }
 
       const proc = spawn([commandPath, ...request.args], {
-        cwd: request.cwd,
+        cwd: resolvedCwd,
         env: {
           ...process.env,
           HOME: isolatedHome,
