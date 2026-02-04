@@ -9,10 +9,10 @@ import { getHostUser, getSessionUsername, isUserActive } from '../lib/user.ts';
  */
 export async function execCommand(instance: string, args: string[]) {
   const hostUser = await getHostUser();
-  const bridge = new SbxBridge(hostUser);
+  const username = await getSessionUsername(instance);
+  const bridge = new SbxBridge(hostUser, username);
 
   try {
-    const username = await getSessionUsername(instance);
     // Check if user is active
     if (!(await isUserActive(username))) {
       logger.error(

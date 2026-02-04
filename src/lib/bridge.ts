@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
@@ -23,9 +24,12 @@ export class SbxBridge {
   private hostKeys: Record<string, string> = {};
   private githubToken = '';
   private binaryPaths: Record<string, string> = {};
+  private sandboxUser: string | null = null;
 
-  constructor(username: string) {
-    this.bridgeDir = `/tmp/.sbx_${username}`;
+  constructor(hostUser: string, sandboxUser?: string) {
+    this.bridgeDir = `/tmp/.sbx_${hostUser}`;
+    this.sandboxUser = sandboxUser || null;
+
     if (!existsSync(this.bridgeDir)) {
       mkdirSync(this.bridgeDir, { recursive: true });
       chmodSync(this.bridgeDir, 0o711); // Allow sandbox user to enter
@@ -95,7 +99,17 @@ export class SbxBridge {
         },
       },
     });
-    chmodSync(this.socketPath, 0o777); // Allow sandbox user to connect
+
+    if (this.sandboxUser) {
+      try {
+        execSync(`chmod +a "user:${this.sandboxUser} allow read,write" ${this.socketPath}`);
+      } catch (err) {
+        logger.debug(`[Bridge] Failed to set ACL on socket: ${err}`);
+        chmodSync(this.socketPath, 0o666);
+      }
+    } else {
+      chmodSync(this.socketPath, 0o666);
+    }
 
     // 2. API Proxy (for OpenCode)
     if (existsSync(this.proxySocketPath)) unlinkSync(this.proxySocketPath);
@@ -202,7 +216,16 @@ export class SbxBridge {
 
     this.proxyServer.listen(this.proxySocketPath, () => {
       logger.debug(`[Bridge] API Proxy listening on ${this.proxySocketPath}`);
-      chmodSync(this.proxySocketPath, 0o777);
+      if (this.sandboxUser) {
+        try {
+          execSync(`chmod +a "user:${this.sandboxUser} allow read,write" ${this.proxySocketPath}`);
+        } catch (err) {
+          logger.debug(`[Bridge] Failed to set ACL on proxy socket: ${err}`);
+          chmodSync(this.proxySocketPath, 0o666);
+        }
+      } else {
+        chmodSync(this.proxySocketPath, 0o666);
+      }
     });
 
     // Wait for sockets to exist
