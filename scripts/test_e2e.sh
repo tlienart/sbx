@@ -121,14 +121,14 @@ run_test "Secret redaction" "raw-exec" \
   '{"instance": "'$INSTANCE'", "command": "env | grep SBX_PROXY_ACTIVE"}' \
   ".stdout | contains(\"SBX_PROXY_ACTIVE\")"
 
-# 6. OpenCode Research
-run_test "OpenCode Research mode" "execute" \
-  '{"instance": "'$INSTANCE'", "prompt": "Who am I?", "mode": "research"}' \
+# 6. OpenCode Research (Explore)
+run_test "OpenCode Explore mode" "execute" \
+  '{"instance": "'$INSTANCE'", "prompt": "Check the current system username by running whoami", "mode": "explore"}' \
   ".output | contains(\"sbx_\")"
 
 # 7. OpenCode Build
 run_test "OpenCode Build mode" "execute" \
-  '{"instance": "'$INSTANCE'", "prompt": "Create a file e2e_done.txt", "mode": "build"}' \
-  ".output | contains(\"created\")"
+  '{"instance": "'$INSTANCE'", "prompt": "Create a file e2e_done.txt with content success", "mode": "build"}' \
+  ".output | contains(\"success\")"
 
 echo -e "\n${GREEN}${BOLD}✨ All End-to-End tests passed successfully!${NC}"
