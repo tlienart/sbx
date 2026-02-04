@@ -155,8 +155,14 @@ export async function runAsUser(
 ): Promise<RunResult> {
   let finalCommand = command;
   if (options.env) {
+    // Escape values for shell. JSON.stringify is a good start for many things
+    // but we should be careful with $. For now, we wrap in single quotes if we can.
     const envExports = Object.entries(options.env)
-      .map(([k, v]) => `export ${k}=${JSON.stringify(v)}`)
+      .map(([k, v]) => {
+        // Simple shell escaping: replace ' with '\'' and wrap in '
+        const escaped = String(v).replace(/'/g, "'\\''");
+        return `export ${k}='${escaped}'`;
+      })
       .join('; ');
     finalCommand = `${envExports}; ${command}`;
   }

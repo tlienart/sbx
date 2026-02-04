@@ -118,6 +118,7 @@ export class SbxBridge {
     this.proxyServer = http.createServer(async (req, res) => {
       try {
         const url = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+        logger.debug(`[Proxy] Incoming request: ${req.method} ${url.pathname}`);
 
         let targetHost: string | null = null;
         let targetPath: string | null = null;
@@ -167,6 +168,7 @@ export class SbxBridge {
               },
             },
             (proxyRes) => {
+              logger.debug(`[Proxy] Upstream response: ${proxyRes.statusCode} for ${providerName}`);
               res.writeHead(proxyRes.statusCode || 200, proxyRes.headers);
               proxyRes.pipe(res);
             },
@@ -177,6 +179,10 @@ export class SbxBridge {
             res.writeHead(502);
             res.end('Proxy Error');
           });
+
+          if (req.headers['content-length']) {
+            logger.debug(`[Proxy] Request body size: ${req.headers['content-length']}`);
+          }
 
           req.pipe(proxyReq);
         } else if (providerName) {

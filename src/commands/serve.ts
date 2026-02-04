@@ -10,6 +10,61 @@ interface ServeOptions {
   port: string;
 }
 
+function getSandboxPort(instanceName: string): number {
+  let hash = 0;
+  for (let i = 0; i < instanceName.length; i++) {
+    hash = (hash << 5) - hash + instanceName.charCodeAt(i);
+    hash |= 0;
+  }
+  return 10000 + (Math.abs(hash) % 5000);
+}
+
+async function ensureBridge(username: string, bridge: SbxBridge, port: number) {
+  const sandboxLogDir = `/Users/${username}/.sbx/logs`;
+  const env = {
+    BRIDGE_SOCK: bridge.getSocketPaths().command,
+    PROXY_SOCK: bridge.getSocketPaths().proxy,
+  };
+
+  // Check if already running on this port
+  try {
+    const check = await runAsUser(username, `nc -z 127.0.0.1 ${port}`);
+    if (check.exitCode === 0) {
+      logger.debug(`[API] Bridge already running for ${username} on port ${port}`);
+      return;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  logger.info(`[API] Starting API bridge for ${username} on port ${port}...`);
+
+  // Try to clean up any dead process on this port just in case
+  try {
+    execSync(`sudo lsof -ti:${port} | xargs sudo kill -9 || true`);
+  } catch {
+    /* ignore */
+  }
+
+  await runAsUser(
+    username,
+    `mkdir -p ${sandboxLogDir} && nohup python3 -u /Users/${username}/.sbx/bin/api_bridge.py ${port} >${sandboxLogDir}/api_bridge.log 2>&1 &`,
+    { env },
+  );
+
+  // Wait for the port to be open
+  for (let i = 0; i < 15; i++) {
+    try {
+      const check = await runAsUser(username, `nc -z 127.0.0.1 ${port}`);
+      if (check.exitCode === 0) return;
+    } catch {
+      /* ignore */
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  throw new Error(`Timed out waiting for API bridge to start on port ${port}`);
+}
+
 export async function serveCommand(options: ServeOptions) {
   const port = Number.parseInt(options.port, 10);
   const hostUser = await getHostUser();
@@ -45,22 +100,14 @@ export async function serveCommand(options: ServeOptions) {
           }
 
           const username = await getSessionUsername(instance);
-
-          if (!isMock && !(await isUserActive(username))) {
-            logger.info(`Instance "${instance}" not active. Auto-provisioning...`);
-            await createSessionUser(instance);
-            await provisionSession(instance);
-          }
+          const apiPort = getSandboxPort(instance);
 
           if (!isMock) {
-            const sandboxLogDir = `/Users/${username}/.sbx/logs`;
-            try {
-              execSync(
-                `sudo su - ${username} -c "mkdir -p ${sandboxLogDir} && nohup api_bridge.py 9999 >${sandboxLogDir}/api_bridge.log 2>&1 &"`,
-              );
-            } catch {
-              /* ignore */
+            if (!(await isUserActive(username))) {
+              await createSessionUser(instance);
             }
+            await provisionSession(instance, undefined, undefined, apiPort);
+            await ensureBridge(username, bridge, apiPort);
           }
 
           logger.info(`[API] Executing in ${instance}: ${command}`);
@@ -79,14 +126,12 @@ export async function serveCommand(options: ServeOptions) {
                 });
                 return { stdout: proc.stdout, stderr: proc.stderr, exitCode: proc.exitCode ?? 0 };
               })()
-            : await (async () => {
-                const env = {
+            : await runAsUser(username, command, {
+                env: {
                   BRIDGE_SOCK: bridge.getSocketPaths().command,
                   PROXY_SOCK: bridge.getSocketPaths().proxy,
-                };
-                logger.debug(`[API] Environment: ${JSON.stringify(env)}`);
-                return runAsUser(username, command, { env });
-              })();
+                },
+              });
 
           return Response.json({
             stdout: result.stdout,
@@ -116,22 +161,14 @@ export async function serveCommand(options: ServeOptions) {
           }
 
           const username = await getSessionUsername(instance);
-
-          if (!isMock && !(await isUserActive(username))) {
-            logger.info(`Instance "${instance}" not active. Auto-provisioning...`);
-            await createSessionUser(instance);
-            await provisionSession(instance, undefined, provider);
-          }
+          const apiPort = getSandboxPort(instance);
 
           if (!isMock) {
-            const sandboxLogDir = `/Users/${username}/.sbx/logs`;
-            try {
-              execSync(
-                `sudo su - ${username} -c "mkdir -p ${sandboxLogDir} && nohup api_bridge.py 9999 >${sandboxLogDir}/api_bridge.log 2>&1 &"`,
-              );
-            } catch {
-              /* ignore */
+            if (!(await isUserActive(username))) {
+              await createSessionUser(instance);
             }
+            await provisionSession(instance, undefined, provider, apiPort);
+            await ensureBridge(username, bridge, apiPort);
           }
 
           logger.info(
@@ -157,14 +194,13 @@ export async function serveCommand(options: ServeOptions) {
                 });
                 return { stdout: proc.stdout, stderr: proc.stderr, exitCode: proc.exitCode ?? 0 };
               })()
-            : await (async () => {
-                const env = {
+            : await runAsUser(username, `${opencodeCmd} < /dev/null`, {
+                env: {
                   BRIDGE_SOCK: bridge.getSocketPaths().command,
                   PROXY_SOCK: bridge.getSocketPaths().proxy,
-                };
-                logger.debug(`[API] Environment: ${JSON.stringify(env)}`);
-                return runAsUser(username, opencodeCmd, { env });
-              })();
+                },
+                timeoutMs: 60000, // 1 minute timeout
+              });
 
           // Parse JSON output from OpenCode
           let finalOutput = '';

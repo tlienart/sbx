@@ -25,6 +25,7 @@ export async function provisionSession(
   instanceName: string,
   tools?: string,
   provider = 'google',
+  apiPort = 9999,
 ): Promise<void> {
   await ensurePkgxOnHost();
   const sessionUser = await getSessionUsername(instanceName);
@@ -95,7 +96,7 @@ pkgx --setup 2>/dev/null | source /dev/stdin 2>/dev/null || true
 
   // Deploy shims and configuration
   await deployShims(sessionUser);
-  await deployOpenCodeConfig(sessionUser, provider);
+  await deployOpenCodeConfig(sessionUser, provider, apiPort);
 }
 
 async function deployShims(sessionUser: string): Promise<void> {
@@ -160,8 +161,12 @@ import os
 import sys
 import socket
 import threading
+import time
 
-PROXY_SOCK = os.environ.get("PROXY_SOCK")
+def log(msg):
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[{timestamp}] {msg}", file=sys.stderr)
+    sys.stderr.flush()
 
 def pipe(source, target):
     try:
@@ -182,19 +187,45 @@ def bridge_handler(tcp_conn, unix_sock_path):
         unix_conn.connect(unix_sock_path)
         threading.Thread(target=pipe, args=(tcp_conn, unix_conn), daemon=True).start()
         threading.Thread(target=pipe, args=(unix_conn, tcp_conn), daemon=True).start()
-    except:
+    except Exception as e:
+        log(f"Failed to connect to unix socket {unix_sock_path}: {e}")
         tcp_conn.close()
 
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 9999
+    proxy_sock = os.environ.get("PROXY_SOCK")
+    
+    if not proxy_sock:
+        log("Error: PROXY_SOCK environment variable not set")
+        sys.exit(1)
+    
+    log(f"Starting API Bridge on 127.0.0.1:{port}")
+    log(f"Target Proxy Socket: {proxy_sock}")
+    
+    if not os.path.exists(proxy_sock):
+        log(f"Warning: Proxy socket not found at {proxy_sock}. It may appear later.")
+    
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(("127.0.0.1", port))
+    try:
+        server.bind(("127.0.0.1", port))
+    except Exception as e:
+        log(f"Error: Failed to bind to port {port}: {e}")
+        sys.exit(1)
+        
     server.listen(100)
-    print(f"API Bridge listening on 127.0.0.1:{port}")
+    log(f"API Bridge listening on 127.0.0.1:{port}")
+    
     while True:
-        client_conn, _ = server.accept()
-        bridge_handler(client_conn, PROXY_SOCK)
+        try:
+            client_conn, addr = server.accept()
+            # Re-read PROXY_SOCK in case it changed (though unlikely)
+            current_proxy_sock = os.environ.get("PROXY_SOCK", proxy_sock)
+            bridge_handler(client_conn, current_proxy_sock)
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            log(f"Error in accept loop: {e}")
 
 if __name__ == "__main__":
     main()
@@ -221,7 +252,11 @@ if __name__ == "__main__":
   }
 }
 
-async function deployOpenCodeConfig(sessionUser: string, provider: string): Promise<void> {
+async function deployOpenCodeConfig(
+  sessionUser: string,
+  provider: string,
+  apiPort: number,
+): Promise<void> {
   const models: Record<string, string> = {
     google: 'google/gemini-3-flash-preview',
     openai: 'openai/gpt-4o',
@@ -233,19 +268,19 @@ async function deployOpenCodeConfig(sessionUser: string, provider: string): Prom
     provider: {
       google: {
         options: {
-          baseURL: 'http://127.0.0.1:9999/google',
+          baseURL: `http://127.0.0.1:${apiPort}/google`,
           apiKey: 'SBX_PROXY_ACTIVE',
         },
       },
       openai: {
         options: {
-          baseURL: 'http://127.0.0.1:9999/openai',
+          baseURL: `http://127.0.0.1:${apiPort}/openai`,
           apiKey: 'SBX_PROXY_ACTIVE',
         },
       },
       anthropic: {
         options: {
-          baseURL: 'http://127.0.0.1:9999/anthropic',
+          baseURL: `http://127.0.0.1:${apiPort}/anthropic`,
           apiKey: 'SBX_PROXY_ACTIVE',
         },
       },
