@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import fs from 'node:fs';
 import { execa } from 'execa';
 import { run, runAsUser, sudoRun } from './exec.ts';
 import { logger } from './logger.ts';
@@ -85,10 +86,27 @@ export async function isUserActive(username: string): Promise<boolean> {
 async function isNetworkReady(username: string): Promise<boolean> {
   try {
     // Try to resolve github.com (common dependency)
-    await runAsUser(username, 'host github.com || nslookup github.com || ping -c 1 github.com', {
-      timeoutMs: 10000,
-    });
-    return true;
+    // We use a shorter timeout for the command itself, but poll it in waitForUserReady
+    const res = await runAsUser(
+      username,
+      'ping -c 1 -t 2 8.8.8.8 >/dev/null && (host github.com || nslookup github.com || ping -c 1 github.com)',
+      {
+        timeoutMs: 5000,
+      },
+    );
+    return res.exitCode === 0;
+  } catch (err: unknown) {
+    return false;
+  }
+}
+
+/**
+ * Checks if the user is recognized and can execute a simple command.
+ */
+async function isIdentityReady(username: string): Promise<boolean> {
+  try {
+    const res = await sudoRun('su', [username, '-c', 'echo ready'], { timeoutMs: 5000 });
+    return res.stdout.includes('ready');
   } catch {
     return false;
   }
@@ -97,13 +115,29 @@ async function isNetworkReady(username: string): Promise<boolean> {
 /**
  * Polls until the user is recognized by the system and network is ready.
  */
-async function waitForUserReady(username: string, maxAttempts = 15): Promise<void> {
+async function waitForUserReady(username: string, maxAttempts = 20): Promise<void> {
+  let identityReady = false;
+
   for (let i = 0; i < maxAttempts; i++) {
     const active = await isUserActive(username);
     if (active) {
-      // Once active, wait for network to stabilize
-      if (await isNetworkReady(username)) return;
-      logger.debug(`Waiting for network to stabilize for ${username}...`);
+      if (!identityReady) {
+        if (await isIdentityReady(username)) {
+          identityReady = true;
+          logger.debug(`User identity confirmed for ${username}.`);
+        } else {
+          logger.debug(`Waiting for ${username} to accept commands...`);
+        }
+      }
+
+      if (identityReady) {
+        // Give the system a moment to finish plumbing the user session
+        await new Promise((r) => setTimeout(r, 1000));
+
+        // Once identity is ready, wait for network to stabilize
+        if (await isNetworkReady(username)) return;
+        logger.debug(`Waiting for network to stabilize for ${username}...`);
+      }
     } else {
       logger.debug(`Waiting for user ${username} to become active...`);
       // Flush directory service cache
@@ -116,8 +150,13 @@ async function waitForUserReady(username: string, maxAttempts = 15): Promise<voi
     }
     await new Promise((resolve) => setTimeout(resolve, 2000));
   }
+
+  const finalActive = await isUserActive(username);
+  const finalIdentity = await isIdentityReady(username);
+  const finalNetwork = await isNetworkReady(username);
+
   throw new Error(
-    `User ${username} setup timed out (active: ${await isUserActive(username)}, network: ${await isNetworkReady(username)}).`,
+    `User ${username} setup timed out (active: ${finalActive}, identity: ${finalIdentity}, network: ${finalNetwork}).`,
   );
 }
 
@@ -189,14 +228,20 @@ export async function createSessionUser(instanceName: string): Promise<string> {
     logger.success(`User identity ${username} captured.`);
   }
 
-  // Wait for the system to recognize the new user and network to be ready
-  await waitForUserReady(username);
-
-  // Ensure the home directory is correctly owned
+  // Ensure the home directory exists and is correctly owned BEFORE readiness checks
+  // (su - depends on a readable home directory)
   const homeDir = `/Users/${username}`;
+  if (!fs.existsSync(homeDir)) {
+    logger.info(`Home directory missing for ${username}, creating...`);
+    await sudoRun('mkdir', ['-p', homeDir]);
+  }
+
   logger.info(`Fixing home directory permissions for ${username}...`);
   await sudoRun('chown', [`${username}:staff`, homeDir]);
   await sudoRun('chmod', ['700', homeDir]);
+
+  // Wait for the system to recognize the new user and network to be ready
+  await waitForUserReady(username);
 
   return username;
 }
