@@ -56,14 +56,22 @@ function trace(message: string) {
 
 /**
  * Ensures sudo is authenticated before starting automated tasks.
+ * Uses non-interactive check first.
  */
 export async function ensureSudo(): Promise<void> {
   try {
-    trace('CMD: sudo -v');
-    await execa('sudo', ['-v'], { stdio: 'inherit' });
-  } catch (err) {
-    trace(`AUTH FAILED: ${err}`);
-    throw new Error('Sudo authentication failed. This tool requires sudo privileges.');
+    // Check if we already have a valid sudo session
+    await execa('sudo', ['-n', '-v']);
+    return;
+  } catch {
+    // Session expired or doesn't exist, try interactive
+    try {
+      trace('CMD: sudo -v');
+      await execa('sudo', ['-v'], { stdio: 'inherit' });
+    } catch (err) {
+      trace(`AUTH FAILED: ${err}`);
+      throw new Error('Sudo authentication failed. This tool requires sudo privileges.');
+    }
   }
 }
 

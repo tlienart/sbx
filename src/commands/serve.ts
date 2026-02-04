@@ -68,6 +68,7 @@ export async function serveCommand(options: ServeOptions) {
   const hostUser = await getHostUser();
   const bridge = new SbxBridge(hostUser);
   const isMock = process.env.SBX_MOCK === '1';
+  const provisionedInstances = new Set<string>();
 
   logger.info(`Starting SBX API server on port ${port}${isMock ? ' (MOCK MODE)' : ''}...`);
 
@@ -128,7 +129,10 @@ export async function serveCommand(options: ServeOptions) {
             if (!(await isUserActive(username))) {
               await createSessionUser(instance);
             }
-            await provisionSession(instance, undefined, undefined, apiPort);
+            if (!provisionedInstances.has(instance)) {
+              await provisionSession(instance, undefined, undefined, apiPort);
+              provisionedInstances.add(instance);
+            }
             await ensureBridge(username, bridge, apiPort);
           }
 
@@ -189,7 +193,10 @@ export async function serveCommand(options: ServeOptions) {
             if (!(await isUserActive(username))) {
               await createSessionUser(instance);
             }
-            await provisionSession(instance, undefined, provider, apiPort);
+            if (!provisionedInstances.has(instance)) {
+              await provisionSession(instance, undefined, provider, apiPort);
+              provisionedInstances.add(instance);
+            }
             await ensureBridge(username, bridge, apiPort);
           }
 

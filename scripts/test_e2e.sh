@@ -62,20 +62,28 @@ run_test() {
     -H "Content-Type: application/json" \
     -d "$data")
 
-  # Check if response is valid JSON and doesn't contain error field
+  # Check if response is valid JSON
+  if ! echo "$RESPONSE" | jq . > /dev/null 2>&1; then
+    echo -e "${RED}FAILED${NC}"
+    echo "   Error: Invalid JSON response from server"
+    echo "   Raw Response: $RESPONSE"
+    exit 1
+  fi
+
   ERROR=$(echo "$RESPONSE" | jq -r '.error // empty')
   
   if [ -n "$ERROR" ]; then
     echo -e "${RED}FAILED${NC}"
-    echo -e "   Error: $ERROR"
+    echo "   Error: $ERROR"
     exit 1
   fi
 
   # Optional additional check
   if [ -n "$jq_filter" ]; then
     VAL=$(echo "$RESPONSE" | jq -r "$jq_filter")
-    if [ "$VAL" == "null" ] || [ -z "$VAL" ]; then
+    if [ "$VAL" == "null" ] || [ -z "$VAL" ] || [ "$VAL" == "false" ]; then
       echo -e "${RED}FAILED (Filter)${NC}"
+      echo "   JQ Filter: $jq_filter"
       echo "   Response: $RESPONSE"
       exit 1
     fi
@@ -90,37 +98,37 @@ run_test() {
 
 # 1. Identity
 run_test "Identity check" "raw-exec" \
-  "{\"instance\": \"$INSTANCE\", \"command\": \"whoami\"}" \
+  '{"instance": "'$INSTANCE'", "command": "whoami"}' \
   ".stdout | contains(\"sbx_\")"
 
 # 2. TMPDIR Isolation
 run_test "TMPDIR isolation" "raw-exec" \
-  "{\"instance\": \"$INSTANCE\", \"command\": \"echo \\\$TMPDIR && touch \\\$TMPDIR/e2e_test && ls \\\$TMPDIR/e2e_test\"}" \
+  '{"instance": "'$INSTANCE'", "command": "echo $TMPDIR && touch $TMPDIR/e2e_test && ls $TMPDIR/e2e_test"}' \
   ".stdout | contains(\"/Users/sbx_\")"
 
 # 3. CWD Security
 run_test "CWD security (git init)" "raw-exec" \
-  "{\"instance\": \"$INSTANCE\", \"command\": \"mkdir -p e2e-proj && cd e2e-proj && git init\"}" \
+  '{"instance": "'$INSTANCE'", "command": "mkdir -p e2e-proj && cd e2e-proj && git init"}' \
   ".stdout | contains(\"Initialized empty Git repository\")"
 
 # 4. GitHub Auth Proxy
 run_test "GitHub auth proxy" "raw-exec" \
-  "{\"instance\": \"$INSTANCE\", \"command\": \"gh auth status\"}" \
+  '{"instance": "'$INSTANCE'", "command": "gh auth status"}' \
   ".stdout | contains(\"Logged in\")"
 
 # 5. Secret Redaction
 run_test "Secret redaction" "raw-exec" \
-  "{\"instance\": \"$INSTANCE\", \"command\": \"env | grep SBX_PROXY_ACTIVE\"}" \
+  '{"instance": "'$INSTANCE'", "command": "env | grep SBX_PROXY_ACTIVE"}' \
   ".stdout | contains(\"SBX_PROXY_ACTIVE\")"
 
 # 6. OpenCode Research
 run_test "OpenCode Research mode" "execute" \
-  "{\"instance\": \"$INSTANCE\", \"prompt\": \"Who am I?\", \"mode\": \"research\"}" \
+  '{"instance": "'$INSTANCE'", "prompt": "Who am I?", "mode": "research"}' \
   ".output | contains(\"sbx_\")"
 
 # 7. OpenCode Build
 run_test "OpenCode Build mode" "execute" \
-  "{\"instance\": \"$INSTANCE\", \"prompt\": \"Create a file e2e_done.txt\", \"mode\": \"build\"}" \
+  '{"instance": "'$INSTANCE'", "prompt": "Create a file e2e_done.txt", "mode": "build"}' \
   ".output | contains(\"created\")"
 
 echo -e "\n${GREEN}${BOLD}✨ All End-to-End tests passed successfully!${NC}"
