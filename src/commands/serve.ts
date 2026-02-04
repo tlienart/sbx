@@ -158,6 +158,7 @@ export async function serveCommand(options: ServeOptions) {
                   BRIDGE_SOCK: bridge.getSocketPaths().command,
                   PROXY_SOCK: bridge.getSocketPaths().proxy,
                 },
+                reject: false,
               });
 
           return Response.json({
