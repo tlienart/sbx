@@ -1,7 +1,8 @@
+import { execSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { type Socket, type SocketListener, listen, spawn } from 'bun';
 
 import { logger } from './logger.ts';
@@ -23,9 +24,12 @@ export class SbxBridge {
   private hostKeys: Record<string, string> = {};
   private githubToken = '';
   private binaryPaths: Record<string, string> = {};
+  private sandboxUser: string | null = null;
 
-  constructor(username: string) {
-    this.bridgeDir = `/tmp/.sbx_${username}`;
+  constructor(hostUser: string, sandboxUser?: string) {
+    this.bridgeDir = `/tmp/.sbx_${hostUser}`;
+    this.sandboxUser = sandboxUser || null;
+
     if (!existsSync(this.bridgeDir)) {
       mkdirSync(this.bridgeDir, { recursive: true });
       chmodSync(this.bridgeDir, 0o711); // Allow sandbox user to enter
@@ -95,7 +99,17 @@ export class SbxBridge {
         },
       },
     });
-    chmodSync(this.socketPath, 0o777); // Allow sandbox user to connect
+
+    if (this.sandboxUser) {
+      try {
+        execSync(`chmod +a "user:${this.sandboxUser} allow read,write" ${this.socketPath}`);
+      } catch (err) {
+        logger.debug(`[Bridge] Failed to set ACL on socket: ${err}`);
+        chmodSync(this.socketPath, 0o666);
+      }
+    } else {
+      chmodSync(this.socketPath, 0o666);
+    }
 
     // 2. API Proxy (for OpenCode)
     if (existsSync(this.proxySocketPath)) unlinkSync(this.proxySocketPath);
@@ -202,7 +216,16 @@ export class SbxBridge {
 
     this.proxyServer.listen(this.proxySocketPath, () => {
       logger.debug(`[Bridge] API Proxy listening on ${this.proxySocketPath}`);
-      chmodSync(this.proxySocketPath, 0o777);
+      if (this.sandboxUser) {
+        try {
+          execSync(`chmod +a "user:${this.sandboxUser} allow read,write" ${this.proxySocketPath}`);
+        } catch (err) {
+          logger.debug(`[Bridge] Failed to set ACL on proxy socket: ${err}`);
+          chmodSync(this.proxySocketPath, 0o666);
+        }
+      } else {
+        chmodSync(this.proxySocketPath, 0o666);
+      }
     });
 
     // Wait for sockets to exist
@@ -225,6 +248,13 @@ export class SbxBridge {
       return;
     }
 
+    const validationError = this.validateArgs(request.command, request.args);
+    if (validationError) {
+      socket.write(JSON.stringify({ type: 'error', message: validationError }));
+      socket.end();
+      return;
+    }
+
     const isolatedHome = join(this.bridgeDir, '.isolated_home');
     if (!existsSync(isolatedHome)) {
       mkdirSync(isolatedHome, { recursive: true });
@@ -235,18 +265,21 @@ export class SbxBridge {
     logger.debug(`[Bridge] Spawning ${commandPath} with args: ${request.args.join(' ')}`);
 
     try {
-      if (!request.cwd || !request.cwd.startsWith('/Users/sbx_')) {
-        throw new Error(
-          `Invalid or missing CWD: ${request.cwd}. Commands must run inside a sandbox home.`,
-        );
+      if (!request.cwd) {
+        throw new Error('Missing CWD');
       }
 
-      if (!existsSync(request.cwd)) {
-        throw new Error(`CWD does not exist: ${request.cwd}`);
+      const resolvedCwd = resolve(request.cwd);
+      if (!resolvedCwd.startsWith('/Users/sbx_')) {
+        throw new Error(`Invalid CWD: ${resolvedCwd}. Commands must run inside a sandbox home.`);
+      }
+
+      if (!existsSync(resolvedCwd)) {
+        throw new Error(`CWD does not exist: ${resolvedCwd}`);
       }
 
       const proc = spawn([commandPath, ...request.args], {
-        cwd: request.cwd,
+        cwd: resolvedCwd,
         env: {
           ...process.env,
           HOME: isolatedHome,
@@ -297,6 +330,26 @@ export class SbxBridge {
     } finally {
       reader.releaseLock();
     }
+  }
+
+  private validateArgs(command: string, args: string[]): string | null {
+    if (command === 'git') {
+      const blocked = ['--exec-path', '--config', '-c', '--upload-pack', '--receive-pack'];
+      for (const arg of args) {
+        if (blocked.some((b) => arg === b || arg.startsWith(`${b}=`))) {
+          return `Flag '${arg}' is not allowed for security reasons.`;
+        }
+      }
+    }
+    if (command === 'gh') {
+      const blocked = ['alias', 'extension'];
+      for (const arg of args) {
+        if (blocked.includes(arg)) {
+          return `Subcommand '${arg}' is not allowed for security reasons.`;
+        }
+      }
+    }
+    return null;
   }
 
   stop() {

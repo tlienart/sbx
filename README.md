@@ -184,6 +184,12 @@ Sbx uses the native macOS `sysadminctl` utility to create a genuine, standard ma
 *   **Network**: Sandboxes have **full internet access** by default. There is no network-level sandboxing or firewalling included. Malicious activity will appear as coming from your IP.
 *   **Secrets**: Secrets (API keys, GitHub tokens) are **never stored or visible** inside the sandbox. They stay on the host and are used by the Bridge to sign requests on behalf of the sandbox.
 
+### Bridge Hardening
+The Sbx Host Bridge is reinforced with several security layers:
+*   **Path Traversal Protection**: All `cwd` (working directory) requests from the sandbox are normalized using absolute path resolution. The bridge strictly rejects any command that resolves outside the designated `/Users/sbx_` prefix.
+*   **Unix Socket Isolation**: Communication sockets are protected using macOS Access Control Entries (ACLs). Only the host user and the specific sandbox user are granted `read/write` access to the bridge.
+*   **Argument Sanitization**: The bridge implements a strict blocklist for dangerous command-line flags. For example, `git --exec-path` or `gh extension` are blocked to prevent the sandbox from executing arbitrary binaries or installing untrusted code on the host.
+
 ### What Sbx is NOT
 *   **Not a Bunker**: Sbx is a "seatbelt" to prevent common "footguns" (like an agent deleting your files). It is not a hardened container for running untrusted malware.
 *   **No Kernel Protection**: It does not protect against kernel-level exploits.
