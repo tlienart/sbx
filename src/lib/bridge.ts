@@ -248,6 +248,13 @@ export class SbxBridge {
       return;
     }
 
+    const validationError = this.validateArgs(request.command, request.args);
+    if (validationError) {
+      socket.write(JSON.stringify({ type: 'error', message: validationError }));
+      socket.end();
+      return;
+    }
+
     const isolatedHome = join(this.bridgeDir, '.isolated_home');
     if (!existsSync(isolatedHome)) {
       mkdirSync(isolatedHome, { recursive: true });
@@ -323,6 +330,26 @@ export class SbxBridge {
     } finally {
       reader.releaseLock();
     }
+  }
+
+  private validateArgs(command: string, args: string[]): string | null {
+    if (command === 'git') {
+      const blocked = ['--exec-path', '--config', '-c', '--upload-pack', '--receive-pack'];
+      for (const arg of args) {
+        if (blocked.some((b) => arg === b || arg.startsWith(`${b}=`))) {
+          return `Flag '${arg}' is not allowed for security reasons.`;
+        }
+      }
+    }
+    if (command === 'gh') {
+      const blocked = ['alias', 'extension'];
+      for (const arg of args) {
+        if (blocked.includes(arg)) {
+          return `Subcommand '${arg}' is not allowed for security reasons.`;
+        }
+      }
+    }
+    return null;
   }
 
   stop() {

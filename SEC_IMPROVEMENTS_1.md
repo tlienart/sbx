@@ -33,17 +33,15 @@ There are no limits on CPU, Memory, or Disk usage for sandbox users.
 ## 3. Proposed Improvements (Roadmap)
 
 ### Priority 1: Bridge Hardening
-- [ ] **CWD Normalization**: Implement `path.resolve` and verify that the resulting path is strictly within the sandbox home directory.
-- [ ] **Socket Permissions**:
-    - Change bridge directory owner to the host user.
-    - Set directory permissions to `700`.
-    - Use ACLs (`chmod +a`) to grant only the specific sandbox user access to the directory.
-- [ ] **Command Sanitization**: Strictly validate arguments passed to the bridge.
+- [x] **CWD Normalization**: Implement `path.resolve` and verify that the resulting path is strictly within the sandbox home directory. (Completed in v0.1.1+)
+- [x] **Socket Permissions**:
+    - Use ACLs (`chmod +a`) to grant only the specific sandbox user access to the Unix sockets. (Completed in v0.1.1+)
+- [x] **Command Sanitization**: Strictly validate arguments passed to the bridge. (Completed: Blocked dangerous flags for git and gh)
 
 ### Priority 2: Style & Type Reinforcement
-- [ ] **Strict Typing**: Eliminate `any` in catch blocks. Use `unknown` and type guards.
-- [ ] **TSC Integration**: Ensure `tsc --noEmit` is part of the core CI/CD and `make check`.
-- [ ] **Linting**: Enable Biome's `noExplicitAny` rule.
+- [x] **Strict Typing**: Eliminate `any` in catch blocks. Use `unknown` and type guards. (Completed)
+- [x] **TSC Integration**: Ensure `tsc --noEmit` is part of the core CI/CD and `make check`. (Completed)
+- [x] **Linting**: Enable Biome's `noExplicitAny` rule. (Completed)
 
 ### Priority 3: Isolation & Resource Control
 - [ ] **Resource Limits**: Explore using `ulimit` or `launchctl` to set memory and CPU caps for sandbox users.

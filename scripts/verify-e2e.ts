@@ -109,6 +109,35 @@ async function runE2E() {
           throw err;
         }
       }
+
+      // 3. Bridge Sanitization Audit
+      logger.info(`Running Bridge Sanitization Audit for ${inst}...`);
+
+      // git --exec-path should be blocked
+      try {
+        await runAsUser(username, 'git --exec-path');
+        throw new Error(`BRIDGE LEAK: git --exec-path was allowed in ${inst}`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("Flag '--exec-path' is not allowed")) {
+          logger.success('Bridge Audit [GIT]: Blocked dangerous flag --exec-path.');
+        } else {
+          throw err;
+        }
+      }
+
+      // gh extension list should be blocked
+      try {
+        await runAsUser(username, 'gh extension list');
+        throw new Error(`BRIDGE LEAK: gh extension was allowed in ${inst}`);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("Subcommand 'extension' is not allowed")) {
+          logger.success('Bridge Audit [GH]: Blocked dangerous subcommand extension.');
+        } else {
+          throw err;
+        }
+      }
     }
 
     // 4. Cleanup
