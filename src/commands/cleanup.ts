@@ -1,6 +1,5 @@
 import { execSync } from 'node:child_process';
 import { existsSync, readdirSync, rmSync } from 'node:fs';
-import chalk from 'chalk';
 import { ensureSudo } from '../lib/exec.ts';
 import { logger } from '../lib/logger.ts';
 import { getHostUser } from '../lib/user.ts';
