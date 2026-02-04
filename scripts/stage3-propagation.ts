@@ -32,8 +32,9 @@ async function stage3() {
     }
 
     console.log(chalk.bold.green('\n✅ Stage 3 Passed: Identity has propagated to the system.'));
-  } catch (err: any) {
-    logger.error(`Stage 3 Failed: ${err.message}`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error(`Stage 3 Failed: ${msg}`);
     process.exit(1);
   }
 }

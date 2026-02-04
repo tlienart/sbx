@@ -3,6 +3,11 @@ import { connect } from 'node:net';
 import { SbxBridge } from '../lib/bridge.ts';
 import { getHostUser } from '../lib/user.ts';
 
+interface BridgeResponse {
+  type: string;
+  message?: string;
+}
+
 test('SbxBridge enforces sandbox-only CWD', async () => {
   const hostUser = await getHostUser();
   const bridge = new SbxBridge(hostUser);
@@ -30,7 +35,7 @@ test('SbxBridge enforces sandbox-only CWD', async () => {
       cwd: '/etc', // Outside sandbox
     };
     client.write(JSON.stringify(request));
-  })) as any;
+  })) as BridgeResponse;
 
   expect(result.type).toBe('error');
   expect(result.message).toContain('Invalid or missing CWD');
@@ -65,7 +70,7 @@ test('SbxBridge fails if CWD does not exist', async () => {
       cwd: '/Users/sbx_nonexistent_user', // Inside /Users/sbx_ but doesn't exist
     };
     client.write(JSON.stringify(request));
-  })) as any;
+  })) as BridgeResponse;
 
   expect(result.type).toBe('error');
   expect(result.message).toContain('CWD does not exist');

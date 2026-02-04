@@ -16,8 +16,9 @@ async function stage6() {
 
     logger.success('Test instance deleted successfully.');
     console.log(chalk.bold.green('\n✅ Stage 6 Passed: System is clean.'));
-  } catch (err: any) {
-    logger.error(`Stage 6 Failed: ${err.message}`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error(`Stage 6 Failed: ${msg}`);
     process.exit(1);
   }
 }

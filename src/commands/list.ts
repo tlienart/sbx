@@ -23,8 +23,9 @@ export async function listCommand() {
     }
 
     console.log(chalk.gray('----------------------------------------'));
-  } catch (err: any) {
-    logger.error(`Error listing sessions: ${err.message}`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error(`Error listing sessions: ${msg}`);
     process.exit(1);
   }
 }

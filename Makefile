@@ -1,7 +1,7 @@
 # Detect Bun - fall back to home directory installation if not in PATH
 BUN := $(shell command -v bun || echo $(HOME)/.bun/bin/bun)
 
-.PHONY: install setup clean test logs doctor check create list delete exec test_e2e
+.PHONY: install setup clean test logs doctor check create list delete exec test_e2e typecheck
 
 # Install pkgx and Bun if missing and setup the project
 install:
@@ -60,8 +60,12 @@ clean:
 doctor:
 	@$(BUN) scripts/doctor.ts
 
+# Type check the codebase
+typecheck: setup
+	@$(BUN) run typecheck
+
 # Run the staged verification suite
-test: setup
+test: setup typecheck
 	@echo "🧪 Running staged verification suite..."
 	@$(BUN) scripts/stage1-auth.ts
 	@$(BUN) scripts/stage2-creation.ts
@@ -71,7 +75,7 @@ test: setup
 	@$(BUN) scripts/stage6-cleanup.ts
 
 # Lint and format check
-check:
+check: typecheck
 	@$(BUN) run check
 
 # Run end-to-end integration tests

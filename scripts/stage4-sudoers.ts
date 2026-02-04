@@ -26,7 +26,7 @@ async function stage4() {
 
     logger.info('Validating sudoers syntax...');
     // Note: visudo -c usually requires root, but we've used sudo in setup
-    const check = await run('sudo', ['visudo', '-c', '-f', filePath]);
+    await run('sudo', ['visudo', '-c', '-f', filePath]);
     logger.success('Sudoers syntax is valid.');
 
     logger.info(`Testing no-password jump to ${username}...`);
@@ -39,8 +39,8 @@ async function stage4() {
     }
 
     console.log(chalk.bold.green('\n✅ Stage 4 Passed: No-password access is guaranteed.'));
-  } catch (err: any) {
-    logger.error(`Stage 4 Failed: ${err.message}`);
+  } catch (err: unknown) {
+    logger.error(`Stage 4 Failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

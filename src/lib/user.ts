@@ -234,8 +234,9 @@ export async function listSessions(): Promise<UserInfo[]> {
       }));
 
     return users;
-  } catch (err: any) {
-    logger.error(`Failed to list users: ${err.message}`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error(`Failed to list users: ${msg}`);
     return [];
   }
 }

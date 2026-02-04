@@ -78,8 +78,9 @@ export async function serveCommand(options: ServeOptions) {
     }
     await bridge.start();
     logger.success('Host bridge started.');
-  } catch (err: any) {
-    logger.error(`Failed to start bridge: ${err.message}`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error(`Failed to start bridge: ${msg}`);
     process.exit(1);
   }
 
@@ -164,9 +165,10 @@ export async function serveCommand(options: ServeOptions) {
             stderr: result.stderr,
             exitCode: result.exitCode,
           });
-        } catch (err: any) {
-          logger.error(`[API] Error: ${err.message}`);
-          return Response.json({ error: err.message }, { status: 500 });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.error(`[API] Error: ${msg}`);
+          return Response.json({ error: msg }, { status: 500 });
         }
       }
 
@@ -260,9 +262,10 @@ export async function serveCommand(options: ServeOptions) {
             exitCode: result.exitCode,
             sessionId: finalSessionId,
           });
-        } catch (err: any) {
-          logger.error(`[API] Error: ${err.message}`);
-          return Response.json({ error: err.message }, { status: 500 });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.error(`[API] Error: ${msg}`);
+          return Response.json({ error: msg }, { status: 500 });
         }
       }
 

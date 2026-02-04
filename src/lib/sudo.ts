@@ -1,5 +1,4 @@
-import path from 'node:path';
-import { run, sudoRun } from './exec.ts';
+import { sudoRun } from './exec.ts';
 import { getHostUser, getSessionUsername } from './user.ts';
 
 /**
@@ -40,8 +39,9 @@ export const sudoers = {
       await sudoRun('mv', [tmpFile, filePath]);
       await sudoRun('chmod', ['440', filePath]);
       await sudoRun('chown', ['root:wheel', filePath]);
-    } catch (err: any) {
-      throw new Error(`Failed to setup sudoers: ${err.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(`Failed to setup sudoers: ${msg}`);
     }
   },
 

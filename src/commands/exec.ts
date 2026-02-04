@@ -1,5 +1,4 @@
 import { execSync, spawn } from 'node:child_process';
-import chalk from 'chalk';
 import { SbxBridge } from '../lib/bridge.ts';
 import { ensureSudo } from '../lib/exec.ts';
 import { logger } from '../lib/logger.ts';
@@ -14,7 +13,6 @@ export async function execCommand(instance: string, args: string[]) {
 
   try {
     const username = await getSessionUsername(instance);
-
     // Check if user is active
     if (!(await isUserActive(username))) {
       logger.error(
@@ -76,8 +74,9 @@ export async function execCommand(instance: string, args: string[]) {
       cleanup(bridge, username);
       process.exit(0);
     });
-  } catch (err: any) {
-    logger.error(`Execution error: ${err.message}`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error(`Execution error: ${msg}`);
     cleanup(bridge, await getSessionUsername(instance));
     process.exit(1);
   }

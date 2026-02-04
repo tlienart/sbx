@@ -88,8 +88,9 @@ async function runE2E() {
       try {
         await runAsUser(username, `ls ${hostHome}`);
         throw new Error(`SANDBOX LEAK: User ${username} could read ${hostHome}`);
-      } catch (err: any) {
-        if (err.message.includes('Permission denied')) {
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('Permission denied')) {
           logger.success(`Sandbox Audit [FS]: Host home is protected from ${inst}.`);
         } else {
           throw err;
@@ -100,11 +101,9 @@ async function runE2E() {
       try {
         await runAsUser(username, 'sudo -n true');
         throw new Error(`SANDBOX LEAK: User ${username} could execute sudo.`);
-      } catch (err: any) {
-        if (
-          err.message.includes('a password is required') ||
-          err.message.includes('not in the sudoers file')
-        ) {
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('a password is required') || msg.includes('not in the sudoers file')) {
           logger.success(`Sandbox Audit [PRIVS]: sudo is restricted in ${inst}.`);
         } else {
           throw err;
@@ -121,9 +120,10 @@ async function runE2E() {
     }
 
     console.log(chalk.bold.green('\n✨ E2E Test Suite Passed Successfully!'));
-  } catch (err: any) {
-    console.error(chalk.red(`\n❌ E2E Test Failed: ${err.message}`));
-    if (err.stack) {
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(chalk.red(`\n❌ E2E Test Failed: ${msg}`));
+    if (err instanceof Error && err.stack) {
       console.error(chalk.gray(err.stack));
     }
     process.exit(1);

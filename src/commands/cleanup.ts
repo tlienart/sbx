@@ -1,6 +1,5 @@
 import { execSync } from 'node:child_process';
 import { existsSync, readdirSync, rmSync } from 'node:fs';
-import { ensureSudo } from '../lib/exec.ts';
 import { logger } from '../lib/logger.ts';
 import { getHostUser } from '../lib/user.ts';
 
@@ -40,8 +39,8 @@ export async function cleanupCommand() {
     }
 
     logger.success('Cleanup complete.');
-  } catch (err: any) {
-    logger.error(`Cleanup failed: ${err.message}`);
+  } catch (err: unknown) {
+    logger.error(`Cleanup failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 }

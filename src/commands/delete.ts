@@ -50,10 +50,11 @@ export async function deleteCommand(instances: string[], options: { concurrency?
         await deleteSessionUser(instance);
 
         bar.update(100, { step: 'Done' });
-      } catch (err: any) {
+      } catch (err: unknown) {
         bar.update(0, { step: chalk.red('Failed!') });
         multibar.stop();
-        logger.error(`Error deleting instance "${instance}": ${err.message}`);
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error(`Error deleting instance "${instance}": ${msg}`);
       }
     }),
   );
