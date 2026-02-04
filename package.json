@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome lint .",
     "format": "biome format .",
-    "check": "biome check --apply .",
+    "check": "biome check --write .",
     "containers": "bun src/index.ts create",
     "test:e2e": "bun scripts/verify-e2e.ts"
   },
