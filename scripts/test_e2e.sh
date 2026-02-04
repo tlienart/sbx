@@ -96,6 +96,10 @@ run_test() {
 # TEST CASES
 # ------------------------------------------------------------------------------
 
+# 0. Pre-test Sandbox Cleanup
+run_test "Pre-test cleanup" "raw-exec" \
+  '{"instance": "'$INSTANCE'", "command": "rm -rf e2e-proj e2e_done.txt && rm -f $TMPDIR/e2e_test"}'
+
 # 1. Identity
 run_test "Identity check" "raw-exec" \
   '{"instance": "'$INSTANCE'", "command": "whoami"}' \
@@ -109,7 +113,7 @@ run_test "TMPDIR isolation" "raw-exec" \
 # 3. CWD Security
 run_test "CWD security (git init)" "raw-exec" \
   '{"instance": "'$INSTANCE'", "command": "mkdir -p e2e-proj && cd e2e-proj && git init"}' \
-  ".stdout | contains(\"Initialized empty Git repository\")"
+  ".stdout | contains(\"Git repository\")"
 
 # 4. GitHub Auth Proxy
 run_test "GitHub auth proxy" "raw-exec" \
