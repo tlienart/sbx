@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { Command } from 'commander';
+import { cleanupCommand } from './commands/cleanup.ts';
 import { createCommand } from './commands/create.ts';
 import { deleteCommand } from './commands/delete.ts';
 import { execCommand } from './commands/exec.ts';
@@ -20,6 +21,11 @@ program
   .action(createCommand);
 
 program.command('list').description('List all active user sessions').action(listCommand);
+
+program
+  .command('cleanup')
+  .description('Deep cleanup of all SBX processes and sockets')
+  .action(cleanupCommand);
 
 program
   .command('delete')

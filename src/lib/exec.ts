@@ -153,18 +153,28 @@ export async function runAsUser(
   command: string,
   options: ExecOptions = {},
 ): Promise<RunResult> {
-  let finalCommand = command;
+  const env: Record<string, string> = {};
   if (options.env) {
-    // Escape values for shell. JSON.stringify is a good start for many things
-    // but we should be careful with $. For now, we wrap in single quotes if we can.
-    const envExports = Object.entries(options.env)
-      .map(([k, v]) => {
-        // Simple shell escaping: replace ' with '\'' and wrap in '
-        const escaped = String(v).replace(/'/g, "'\\''");
-        return `export ${k}='${escaped}'`;
-      })
-      .join('; ');
-    finalCommand = `${envExports}; ${command}`;
+    for (const [k, v] of Object.entries(options.env)) {
+      if (v !== undefined) env[k] = v;
+    }
   }
+
+  // Ensure TMPDIR is set to the sandbox-specific one if not provided.
+  // This is a fallback in case profile files are not sourced.
+  if (!env.TMPDIR) {
+    env.TMPDIR = `/Users/${username}/tmp`;
+  }
+
+  // Escape values for shell.
+  const envExports = Object.entries(env)
+    .map(([k, v]) => {
+      // Simple shell escaping: replace ' with '\'' and wrap in '
+      const escaped = String(v).replace(/'/g, "'\\''");
+      return `export ${k}='${escaped}'`;
+    })
+    .join('; ');
+  const finalCommand = `${envExports}; ${command}`;
+
   return sudoRun('su', ['-', username, '-c', finalCommand], options);
 }

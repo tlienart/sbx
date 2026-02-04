@@ -1,10 +1,11 @@
+import { execSync } from 'node:child_process';
 import chalk from 'chalk';
 import { MultiBar, Presets } from 'cli-progress';
 import pLimit from 'p-limit';
 import { ensureSudo } from '../lib/exec.ts';
 import { logger } from '../lib/logger.ts';
 import { sudoers } from '../lib/sudo.ts';
-import { deleteSessionUser } from '../lib/user.ts';
+import { deleteSessionUser, getSandboxPort } from '../lib/user.ts';
 
 export async function deleteCommand(instances: string[], options: { concurrency?: string }) {
   if (instances.length === 0) {
@@ -34,6 +35,14 @@ export async function deleteCommand(instances: string[], options: { concurrency?
       const bar = multibar.create(100, 0, { instance, step: 'Deleting...' });
 
       try {
+        bar.update(10, { step: 'Stopping bridge...' });
+        const port = getSandboxPort(instance);
+        try {
+          execSync(`sudo lsof -ti:${port} | xargs sudo kill -9 || true`);
+        } catch {
+          /* ignore */
+        }
+
         bar.update(30, { step: 'Removing sudoers...' });
         await sudoers.remove(instance);
 

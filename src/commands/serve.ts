@@ -4,19 +4,17 @@ import { SbxBridge } from '../lib/bridge.ts';
 import { ensureSudo, runAsUser } from '../lib/exec.ts';
 import { logger } from '../lib/logger.ts';
 import { provisionSession } from '../lib/provision.ts';
-import { createSessionUser, getHostUser, getSessionUsername, isUserActive } from '../lib/user.ts';
+import {
+  createSessionUser,
+  getHostUser,
+  getSandboxPort,
+  getSessionUsername,
+  isUserActive,
+  listSessions,
+} from '../lib/user.ts';
 
 interface ServeOptions {
   port: string;
-}
-
-function getSandboxPort(instanceName: string): number {
-  let hash = 0;
-  for (let i = 0; i < instanceName.length; i++) {
-    hash = (hash << 5) - hash + instanceName.charCodeAt(i);
-    hash |= 0;
-  }
-  return 10000 + (Math.abs(hash) % 5000);
 }
 
 async function ensureBridge(username: string, bridge: SbxBridge, port: number) {
@@ -88,6 +86,30 @@ export async function serveCommand(options: ServeOptions) {
     port,
     async fetch(req) {
       const url = new URL(req.url);
+
+      // --- /status ---
+      if (req.method === 'GET' && url.pathname === '/status') {
+        const sessions = await listSessions();
+        const results = await Promise.all(
+          sessions.map(async (s) => {
+            const port = getSandboxPort(s.instanceName);
+            let bridgeActive = false;
+            try {
+              const check = await runAsUser(s.username, `nc -z 127.0.0.1 ${port}`);
+              bridgeActive = check.exitCode === 0;
+            } catch {
+              /* ignore */
+            }
+            return {
+              instance: s.instanceName,
+              username: s.username,
+              bridgePort: port,
+              bridgeActive,
+            };
+          }),
+        );
+        return Response.json({ status: 'ok', instances: results });
+      }
 
       // --- /raw-exec ---
       if (req.method === 'POST' && url.pathname === '/raw-exec') {
@@ -244,7 +266,13 @@ export async function serveCommand(options: ServeOptions) {
   logger.success(`Server listening at http://localhost:${server.port}`);
 
   const cleanup = () => {
-    logger.info('Shutting down server...');
+    logger.info('Shutting down server and bridges...');
+    try {
+      // Kill all api_bridge.py processes
+      execSync('pkill -f api_bridge.py || true');
+    } catch {
+      /* ignore */
+    }
     bridge.stop();
     server.stop();
     process.exit(0);

@@ -234,27 +234,31 @@ export class SbxBridge {
     logger.debug(`[Bridge] Spawning ${commandPath} with args: ${request.args.join(' ')}`);
 
     try {
-      let effectiveCwd = process.cwd();
-      if (request.cwd && existsSync(request.cwd)) {
-        try {
-          // Check if we can actually enter the directory
-          readdirSync(request.cwd);
-          effectiveCwd = request.cwd;
-        } catch (e) {
-          logger.debug(
-            `[Bridge] Cannot access cwd ${request.cwd}, falling back to ${effectiveCwd}`,
-          );
-        }
+      if (!request.cwd || !request.cwd.startsWith('/Users/sbx_')) {
+        throw new Error(
+          `Invalid or missing CWD: ${request.cwd}. Commands must run inside a sandbox home.`,
+        );
+      }
+
+      if (!existsSync(request.cwd)) {
+        throw new Error(`CWD does not exist: ${request.cwd}`);
       }
 
       const proc = spawn([commandPath, ...request.args], {
-        cwd: effectiveCwd,
+        cwd: request.cwd,
         env: {
           ...process.env,
           HOME: isolatedHome,
           GH_CONFIG_DIR: join(isolatedHome, '.config', 'gh'),
           GH_TOKEN: this.githubToken,
           GITHUB_TOKEN: this.githubToken,
+          // Git isolation
+          GIT_CONFIG_GLOBAL: join(isolatedHome, '.gitconfig'),
+          GIT_CONFIG_NOSYSTEM: '1',
+          GIT_AUTHOR_NAME: 'SBX Sandbox',
+          GIT_AUTHOR_EMAIL: 'sbx@localhost',
+          GIT_COMMITTER_NAME: 'SBX Sandbox',
+          GIT_COMMITTER_EMAIL: 'sbx@localhost',
           // Clear any other gh related env vars to ensure we use our token
           GITHUB_USER: '',
           GH_USER: '',

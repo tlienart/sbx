@@ -1,7 +1,7 @@
 # Detect Bun - fall back to home directory installation if not in PATH
 BUN := $(shell command -v bun || echo $(HOME)/.bun/bin/bun)
 
-.PHONY: install setup clean test logs doctor check create list delete exec
+.PHONY: install setup clean test logs doctor check create list delete exec test_e2e
 
 # Install pkgx and Bun if missing and setup the project
 install:
@@ -73,6 +73,11 @@ test: setup
 # Lint and format check
 check:
 	@$(BUN) run check
+
+# Run end-to-end integration tests
+test_e2e: setup
+	@chmod +x scripts/test_e2e.sh
+	@./scripts/test_e2e.sh
 
 # View real-time system traces
 logs:
