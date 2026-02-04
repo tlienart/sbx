@@ -76,6 +76,6 @@ test('POST /execute supports multi-turn with sessionId', async () => {
 
   expect(data2.sessionId).toBe(firstSessionId);
   expect(data2.output).toContain(
-    'MOCK RESPONSE FOR: run --agent build --format json "how are you" --session ' + firstSessionId,
+    `MOCK RESPONSE FOR: run --agent build --format json how are you --session ${firstSessionId}`,
   );
 });
