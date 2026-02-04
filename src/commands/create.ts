@@ -4,7 +4,6 @@ import pLimit from 'p-limit';
 import { ensureSudo } from '../lib/exec.ts';
 import { logger } from '../lib/logger.ts';
 import { provisionSession } from '../lib/provision.ts';
-import { sudoers } from '../lib/sudo.ts';
 import { createSessionUser } from '../lib/user.ts';
 
 export async function createCommand(
@@ -47,15 +46,11 @@ export async function createCommand(
       const bar = multibar.create(100, 0, { instance, step: 'Initializing...' });
 
       try {
-        // Step 1: Create User
+        // Step 1: Create User (Includes sudoers & ACLs setup)
         bar.update(10, { step: 'Creating user...' });
         await createSessionUser(instance);
 
-        // Step 2: Sudoers
-        bar.update(30, { step: 'Configuring sudo...' });
-        await sudoers.setup(instance);
-
-        // Step 3: Provision tools
+        // Step 2: Provision tools
         const toolMsg = options.tools
           ? `Provisioning tools (${options.tools})...`
           : 'Provisioning toolchain (pkgx)...';

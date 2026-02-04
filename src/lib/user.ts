@@ -3,10 +3,49 @@ import fs from 'node:fs';
 import { execa } from 'execa';
 import { run, runAsUser, sudoRun } from './exec.ts';
 import { logger } from './logger.ts';
+import { sudoers } from './sudo.ts';
 
 export interface UserInfo {
   username: string;
   instanceName: string;
+}
+
+/**
+ * Ensures the host user has access to the sandbox home directory for bridged commands.
+ */
+export async function ensureHostAccessToSandbox(sessionUser: string): Promise<void> {
+  const hostUser = await getHostUser();
+  const homeDir = `/Users/${sessionUser}`;
+
+  logger.info(`Granting host user "${hostUser}" access to ${homeDir}...`);
+
+  try {
+    // 1. Ensure the directory itself is locked down (700)
+    await sudoRun('chmod', ['700', homeDir]);
+
+    // 2. Apply ACLs for inheritance so the host can access any subdirectories created by the sandbox.
+    // 'inherited' flag means it applies to existing items if we were using -R,
+    // but here we use 'file_inherit,directory_inherit' for future items.
+    // We use a broader set of permissions to ensure the bridge can do everything needed.
+    const acl = `user:${hostUser} allow list,add_file,search,add_subdirectory,delete_child,readsecurity,file_inherit,directory_inherit`;
+
+    // Clear existing ACLs first to avoid duplicates/conflicts
+    await sudoRun('chmod', ['-N', homeDir]);
+    // Apply new ACL to the home directory
+    await sudoRun('chmod', ['+a', acl, homeDir]);
+
+    // 3. Ensure critical subdirectories also have the ACL if they already exist
+    const subDirs = ['.sbx', '.config', 'tmp'];
+    for (const sub of subDirs) {
+      const subPath = `${homeDir}/${sub}`;
+      if (fs.existsSync(subPath)) {
+        await sudoRun('chmod', ['+a', acl, subPath]);
+      }
+    }
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn(`Failed to set ACLs on ${homeDir}: ${msg}. Bridged commands might fail.`);
+  }
 }
 
 /**
@@ -85,13 +124,13 @@ export async function isUserActive(username: string): Promise<boolean> {
  */
 async function isNetworkReady(username: string): Promise<boolean> {
   try {
-    // Try to resolve github.com (common dependency)
-    // We use a shorter timeout for the command itself, but poll it in waitForUserReady
+    // Try to reach a reliable IP or resolve a common domain.
+    // We use a shorter timeout for individual attempts but retry in the outer loop.
     const res = await runAsUser(
       username,
-      'ping -c 1 -t 2 8.8.8.8 >/dev/null && (host github.com || nslookup github.com || ping -c 1 github.com)',
+      'ping -c 1 -t 1 8.8.8.8 >/dev/null || ping -c 1 -t 1 github.com >/dev/null || host -W 1 google.com >/dev/null',
       {
-        timeoutMs: 5000,
+        timeoutMs: 2000,
       },
     );
     return res.exitCode === 0;
@@ -105,7 +144,8 @@ async function isNetworkReady(username: string): Promise<boolean> {
  */
 async function isIdentityReady(username: string): Promise<boolean> {
   try {
-    const res = await sudoRun('su', [username, '-c', 'echo ready'], { timeoutMs: 5000 });
+    // We MUST use su - to match the sudoers NOPASSWD policy
+    const res = await sudoRun('su', ['-', username, '-c', 'echo ready'], { timeoutMs: 5000 });
     return res.stdout.includes('ready');
   } catch {
     return false;
@@ -115,7 +155,7 @@ async function isIdentityReady(username: string): Promise<boolean> {
 /**
  * Polls until the user is recognized by the system and network is ready.
  */
-async function waitForUserReady(username: string, maxAttempts = 20): Promise<void> {
+async function waitForUserReady(username: string, maxAttempts = 40): Promise<void> {
   let identityReady = false;
 
   for (let i = 0; i < maxAttempts; i++) {
@@ -148,7 +188,8 @@ async function waitForUserReady(username: string, maxAttempts = 20): Promise<voi
         /* ignore if fails */
       }
     }
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Faster polling: 1 second instead of 2
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   }
 
   const finalActive = await isUserActive(username);
@@ -158,6 +199,16 @@ async function waitForUserReady(username: string, maxAttempts = 20): Promise<voi
   throw new Error(
     `User ${username} setup timed out (active: ${finalActive}, identity: ${finalIdentity}, network: ${finalNetwork}).`,
   );
+}
+
+/**
+ * Gets the numeric UID of a user from Directory Services (Ground Truth).
+ */
+export async function getNumericUid(username: string): Promise<string> {
+  const { stdout } = await run('dscl', ['.', '-read', `/Users/${username}`, 'UniqueID'], {
+    timeoutMs: 5000,
+  });
+  return stdout.replace('UniqueID:', '').trim();
 }
 
 /**
@@ -172,10 +223,7 @@ export async function createSessionUser(instanceName: string): Promise<string> {
 
   if (existsInDscl && active) {
     logger.debug(`User ${username} already exists and is active.`);
-    return username;
-  }
-
-  if (!existsInDscl) {
+  } else if (!existsInDscl) {
     logger.info(`Provisioning macOS user account: ${username}...`);
     const pw = generateRandomPassword(64);
 
@@ -231,14 +279,48 @@ export async function createSessionUser(instanceName: string): Promise<string> {
   // Ensure the home directory exists and is correctly owned BEFORE readiness checks
   // (su - depends on a readable home directory)
   const homeDir = `/Users/${username}`;
+
+  // Ground truth UID resolution
+  await sudoRun('dscacheutil', ['-flushcache']);
+  const currentUid = await getNumericUid(username);
+
+  if (fs.existsSync(homeDir)) {
+    // Check for UID mismatch (common in rapid user recycling on macOS)
+    try {
+      const { stdout: dirUidStr } = await sudoRun('stat', ['-f', '%u', homeDir]);
+      const dirUid = dirUidStr.trim();
+      if (dirUid !== currentUid) {
+        logger.info(
+          `UID mismatch for ${homeDir} (Dir: ${dirUid}, User: ${currentUid}). Resetting home...`,
+        );
+        await sudoRun('rm', ['-rf', homeDir]);
+      }
+    } catch (err) {
+      logger.warn(`Failed to stat ${homeDir}, forcing reset: ${err}`);
+      await sudoRun('rm', ['-rf', homeDir]);
+    }
+  }
+
   if (!fs.existsSync(homeDir)) {
     logger.info(`Home directory missing for ${username}, creating...`);
     await sudoRun('mkdir', ['-p', homeDir]);
   }
 
   logger.info(`Fixing home directory permissions for ${username}...`);
-  await sudoRun('chown', [`${username}:staff`, homeDir]);
+  await sudoRun('chown', [`${currentUid}:20`, homeDir]); // 20 is 'staff' GID
   await sudoRun('chmod', ['700', homeDir]);
+
+  // --- CRITICAL: KEY REORDERING ---
+  // We MUST setup sudoers and ACLs BEFORE waiting for user readiness.
+  // The readiness check uses 'su -' which requires sudoers permission (for nopasswd)
+  // and the home directory bits/ACLs to be correctly set for the host bridge.
+
+  logger.info(`Configuring host access (sudoers & ACLs) for ${username}...`);
+  await sudoers.setup(instanceName);
+  await ensureHostAccessToSandbox(username);
+
+  // Give the system a moment to settle the filesystem/TCC metadata
+  await new Promise((r) => setTimeout(r, 2000));
 
   // Wait for the system to recognize the new user and network to be ready
   await waitForUserReady(username);
@@ -257,8 +339,18 @@ export async function deleteSessionUser(instanceName: string): Promise<void> {
     return;
   }
 
+  logger.info(`Deleting user session: ${username}...`);
   // -deleteUser <name> deletes the user and home directory
   await sudoRun('sysadminctl', ['-deleteUser', username]);
+
+  // Wait for the user record to be completely removed (Synchronous delete)
+  for (let i = 0; i < 20; i++) {
+    if (!(await userExists(username))) {
+      logger.debug(`User ${username} record removed.`);
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
 }
 
 /**

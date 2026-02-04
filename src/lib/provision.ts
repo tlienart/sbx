@@ -1,6 +1,5 @@
 import { run, runAsUser, sudoRun } from './exec.ts';
 import { logger } from './logger.ts';
-import { sudoers } from './sudo.ts';
 import { getHostUser, getSessionUsername } from './user.ts';
 
 /**
@@ -20,40 +19,6 @@ async function ensurePkgxOnHost(): Promise<void> {
 }
 
 /**
- * Ensures the host user has access to the sandbox home directory for bridged commands.
- */
-async function ensureHostAccessToSandbox(sessionUser: string): Promise<void> {
-  const hostUser = await getHostUser();
-  const homeDir = `/Users/${sessionUser}`;
-
-  logger.info(`Granting host user "${hostUser}" access to ${homeDir}...`);
-
-  try {
-    // 1. Ensure the directory itself is searchable/traversable for the host user
-    await sudoRun('chmod', ['755', homeDir]);
-
-    // 2. Apply ACLs for inheritance so the host can access any subdirectories created by the sandbox.
-    // We grant full control to the host user on this path and its children.
-    // 'inherited' flag means it applies to existing items if we were using -R,
-    // but here we use 'file_inherit,directory_inherit' for future items.
-    const acl = `user:${hostUser} allow list,add_file,search,add_subdirectory,delete_child,readsecurity,file_inherit,directory_inherit`;
-
-    // Clear existing ACLs first to avoid duplicates/conflicts
-    await sudoRun('chmod', ['-N', homeDir]);
-    // Apply new ACL to the home directory
-    await sudoRun('chmod', ['+a', acl, homeDir]);
-
-    // 3. For any EXISTING subdirectories, we should ideally apply the ACL too,
-    // but to keep it fast we only do it for the top level or known important dirs.
-    // Actually, let's just do a shallow ACL grant on existing top-level items.
-    await sudoRun('bash', ['-c', `find ${homeDir} -maxdepth 1 -exec chmod +a "${acl}" {} +`]);
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.warn(`Failed to set ACLs on ${homeDir}: ${msg}. Bridged commands might fail.`);
-  }
-}
-
-/**
  * Provisions the session with the pkgx toolchain, shims, and configuration.
  */
 export async function provisionSession(
@@ -65,11 +30,8 @@ export async function provisionSession(
   await ensurePkgxOnHost();
   const sessionUser = await getSessionUsername(instanceName);
 
-  // Ensure permissions are correct for the host bridge
-  await ensureHostAccessToSandbox(sessionUser);
-
-  // Ensure sudoers are configured for non-interactive API access
-  await sudoers.setup(instanceName);
+  // Note: Permissions (ACLs) and sudoers are now handled by createSessionUser
+  // for better synchronicity during initial identity checks.
 
   const hostUser = await getHostUser();
   const bridgeDir = `/tmp/.sbx_${hostUser}`;
@@ -345,7 +307,10 @@ if __name__ == "__main__":
 `.trim();
 
   const shimDir = `/Users/${sessionUser}/.sbx/bin`;
-  await runAsUser(sessionUser, `mkdir -p ${shimDir}`);
+  // Use sudo to ensure directory creation succeeds regardless of user session state
+  await sudoRun('mkdir', ['-p', shimDir]);
+  await sudoRun('chown', [`${sessionUser}:staff`, `/Users/${sessionUser}/.sbx`]);
+  await sudoRun('chown', [`${sessionUser}:staff`, shimDir]);
 
   const shims = [
     { name: 'git', content: gitShim, dest: `${shimDir}/git` },
@@ -354,7 +319,7 @@ if __name__ == "__main__":
   ];
 
   for (const shim of shims) {
-    const tmpFile = `/tmp/sbx_shim_${shim.name}`;
+    const tmpFile = `/tmp/sbx_shim_${sessionUser}_${shim.name}`;
     await run('bash', [
       '-c',
       `cat <<'EOF' > ${tmpFile}\n#!/usr/bin/env python3\n${shim.content}\nEOF`,

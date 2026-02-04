@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import chalk from 'chalk';
 import { run } from '../src/lib/exec.ts';
 
@@ -19,7 +20,33 @@ async function doctor() {
     console.log(chalk.yellow('⚠️  Sudo: Not authenticated. Run "sudo -v" to cache credentials.'));
   }
 
-  // 3. Full Disk Access Guide
+  // 3. Check Sandbox Isolation
+  const usersDir = '/Users';
+  const sbxDirs = fs.readdirSync(usersDir).filter((d) => d.startsWith('sbx_'));
+  if (sbxDirs.length > 0) {
+    let allHealthy = true;
+    for (const dir of sbxDirs) {
+      const stats = fs.statSync(`${usersDir}/${dir}`);
+      const mode = stats.mode & 0o777;
+      if (mode !== 0o700) {
+        console.log(
+          chalk.red(
+            `❌ Isolation: ${dir} has insecure permissions (${mode.toString(8)}). Expected 700.`,
+          ),
+        );
+        allHealthy = false;
+      }
+    }
+    if (allHealthy) {
+      console.log(
+        chalk.green(
+          `✅ Isolation: All ${sbxDirs.length} sandboxes are correctly locked down (700).`,
+        ),
+      );
+    }
+  }
+
+  // 4. Full Disk Access Guide
   console.log(chalk.bold.yellow('\n🛡️  How to enable Seamless Creation (Silence Popups):'));
   console.log(
     chalk.white('1. Open ') + chalk.bold('System Settings') + chalk.white(' (Cmd + Space).'),

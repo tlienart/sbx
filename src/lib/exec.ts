@@ -182,6 +182,9 @@ export async function runAsUser(
       return `export ${k}='${escaped}'`;
     })
     .join('; ');
+
+  // We MUST use su - (login shell) to match the sudoers NOPASSWD policy.
+  // The login shell also ensures profile files are sourced.
   const finalCommand = `${envExports}; ${command}`;
 
   return sudoRun('su', ['-', username, '-c', finalCommand], options);
