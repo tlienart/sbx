@@ -17,7 +17,7 @@ export const sudoers = {
    */
   getContent: (hostUser: string, sessionUser: string) => {
     // This allows the host user to su to the session user without a password.
-    // format: hostUser ALL=(root) NOPASSWD: /usr/bin/su - sessionUser *
+    // We allow any arguments after 'su - sessionUser' to support -c and environment injections.
     return `${hostUser} ALL=(root) NOPASSWD: /usr/bin/su - ${sessionUser} *\n`;
   },
 

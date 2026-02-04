@@ -16,6 +16,18 @@ function generateRandomPassword(length: number): string {
 }
 
 /**
+ * Deterministically generates a port number for an instance bridge.
+ */
+export function getSandboxPort(instanceName: string): number {
+  let hash = 0;
+  for (let i = 0; i < instanceName.length; i++) {
+    hash = (hash << 5) - hash + instanceName.charCodeAt(i);
+    hash |= 0;
+  }
+  return 10000 + (Math.abs(hash) % 5000);
+}
+
+/**
  * Gets the current host username.
  * Prioritizes SUDO_USER to ensure consistent session association even when run via sudo.
  */
@@ -180,7 +192,7 @@ export async function createSessionUser(instanceName: string): Promise<string> {
   // Wait for the system to recognize the new user and network to be ready
   await waitForUserReady(username);
 
-  // Ensure the home directory is correctly owned and restricted
+  // Ensure the home directory is correctly owned
   const homeDir = `/Users/${username}`;
   logger.info(`Fixing home directory permissions for ${username}...`);
   await sudoRun('chown', [`${username}:staff`, homeDir]);

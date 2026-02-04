@@ -56,14 +56,22 @@ function trace(message: string) {
 
 /**
  * Ensures sudo is authenticated before starting automated tasks.
+ * Uses non-interactive check first.
  */
 export async function ensureSudo(): Promise<void> {
   try {
-    trace('CMD: sudo -v');
-    await execa('sudo', ['-v'], { stdio: 'inherit' });
-  } catch (err) {
-    trace(`AUTH FAILED: ${err}`);
-    throw new Error('Sudo authentication failed. This tool requires sudo privileges.');
+    // Check if we already have a valid sudo session
+    await execa('sudo', ['-n', '-v']);
+    return;
+  } catch {
+    // Session expired or doesn't exist, try interactive
+    try {
+      trace('CMD: sudo -v');
+      await execa('sudo', ['-v'], { stdio: 'inherit' });
+    } catch (err) {
+      trace(`AUTH FAILED: ${err}`);
+      throw new Error('Sudo authentication failed. This tool requires sudo privileges.');
+    }
   }
 }
 
@@ -153,5 +161,28 @@ export async function runAsUser(
   command: string,
   options: ExecOptions = {},
 ): Promise<RunResult> {
-  return sudoRun('su', ['-', username, '-c', command], options);
+  const env: Record<string, string> = {};
+  if (options.env) {
+    for (const [k, v] of Object.entries(options.env)) {
+      if (v !== undefined) env[k] = v;
+    }
+  }
+
+  // Ensure TMPDIR is set to the sandbox-specific one if not provided.
+  // This is a fallback in case profile files are not sourced.
+  if (!env.TMPDIR) {
+    env.TMPDIR = `/Users/${username}/tmp`;
+  }
+
+  // Escape values for shell.
+  const envExports = Object.entries(env)
+    .map(([k, v]) => {
+      // Simple shell escaping: replace ' with '\'' and wrap in '
+      const escaped = String(v).replace(/'/g, "'\\''");
+      return `export ${k}='${escaped}'`;
+    })
+    .join('; ');
+  const finalCommand = `${envExports}; ${command}`;
+
+  return sudoRun('su', ['-', username, '-c', finalCommand], options);
 }
