@@ -6,16 +6,15 @@ This plan consolidates the fixes for the three major issues identified in the te
 ## Task 1: Fix E2E Shell Compatibility (Issue 3)
 - **Status**: Completed
 
-## Task 2: Harden Sandbox Provisioning (Issue 2/4)
-- **Status**: Completed
+## Task 2: Harden Sandbox Provisioning (Issue 2/4/6)
+- **Status**: Completed (Sequential stages, increased timeouts, faster polling).
 
 ## Task 3: Refine Bot Mock Output (Issue 1)
 - **Status**: Completed
 
-## Task 4: Final Validation
-- **Action**: Run `make test_full` and verify all targets are Green and Readable.
-- **Status**: Completed
+## Task 4: Synchronize E2E Timeouts & Pre-provisioning
+- **Status**: Completed (180s timeout, explicit pre-create).
 
-## Task 5: Final Stabilization
-- **Action**: Harden identity probes and E2E recycling.
-- **Status**: Completed
+## Task 5: Final Validation
+- **Action**: Run `make test_full`.
+- **Status**: In Progress

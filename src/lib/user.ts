@@ -160,17 +160,20 @@ async function isIdentityReady(username: string): Promise<boolean> {
 async function waitForUserReady(username: string): Promise<void> {
   // Stage 1: Unix Identity propagation (30s)
   let stage1Ok = false;
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 120; i++) {
+    // 120 * 250ms = 30s
     if (await isUserActive(username)) {
       stage1Ok = true;
       break;
     }
-    logger.debug(`[Stage 1] Waiting for ${username} record to propagate...`);
-    await sudoRun('dscacheutil', ['-flushcache']);
-    try {
-      await sudoRun('killall', ['-HUP', 'opendirectoryd']);
-    } catch {}
-    await new Promise((r) => setTimeout(r, 1000));
+    if (i % 4 === 0) {
+      logger.info(`[Stage 1] Waiting for ${username} record to propagate...`);
+      await sudoRun('dscacheutil', ['-flushcache']);
+      try {
+        await sudoRun('killall', ['-HUP', 'opendirectoryd']);
+      } catch {}
+    }
+    await new Promise((r) => setTimeout(r, 250));
   }
   if (!stage1Ok) throw new Error(`User ${username} record failed to propagate within 30s.`);
 
@@ -181,7 +184,7 @@ async function waitForUserReady(username: string): Promise<void> {
       stage2Ok = true;
       break;
     }
-    logger.debug(`[Stage 2] Waiting for ${username} shell to accept commands...`);
+    logger.info(`[Stage 2] Waiting for ${username} shell to accept commands...`);
     // Aggressive cache flushing for the identity subsystem
     await sudoRun('dscacheutil', ['-flushcache']);
     try {
@@ -191,17 +194,14 @@ async function waitForUserReady(username: string): Promise<void> {
   }
   if (!stage2Ok) throw new Error(`User ${username} shell failed to become ready within 60s.`);
 
-  // Give the system a tiny moment to settle before network probe
-  await new Promise((r) => setTimeout(r, 1000));
-
-  // Stage 3: Network Connectivity (60s - can be slow on fresh users)
+  // Stage 3: Network Connectivity (60s)
   let stage3Ok = false;
   for (let i = 0; i < 60; i++) {
     if (await isNetworkReady(username)) {
       stage3Ok = true;
       break;
     }
-    if (i % 5 === 0) logger.debug(`[Stage 3] Waiting for network connectivity for ${username}...`);
+    if (i % 5 === 0) logger.info(`[Stage 3] Waiting for network connectivity for ${username}...`);
     await new Promise((r) => setTimeout(r, 1000));
   }
   if (!stage3Ok) throw new Error(`User ${username} network failed to initialize within 60s.`);

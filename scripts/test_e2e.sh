@@ -113,8 +113,8 @@ run_test() {
     data=$(echo "$payload" | jq --arg inst "$inst" '. + {instance: $inst}')
   fi
 
-  # Execute with a 60s timeout to avoid indefinite hangs
-  RESPONSE=$(curl -s -m 60 -X POST "$URL/$endpoint" \
+  # Execute with a 180s timeout to avoid indefinite hangs
+  RESPONSE=$(curl -s -m 180 -X POST "$URL/$endpoint" \
     -H "Content-Type: application/json" \
     -d "$data")
 
@@ -208,6 +208,13 @@ ALPHA="e2e-alpha"
 BETA="e2e-beta"
 
 echo -e "\n${BOLD}👯 Testing Parallel Session Independence${NC}"
+
+# Pre-create instances explicitly to avoid timeouts during functional tests
+run_test "Pre-create Alpha" "$ALPHA" "create" '{}'
+# Small delay to prevent opendirectoryd congestion
+sleep 3
+run_test "Pre-create Beta" "$BETA" "create" '{}'
+sleep 1
 
 # 8. Parallel Functional Independence
 run_test "Alpha write to its own state" "$ALPHA" "raw-exec" \
