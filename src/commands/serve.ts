@@ -113,6 +113,44 @@ export async function serveCommand(options: ServeOptions) {
         return Response.json({ status: 'ok', instances: results });
       }
 
+      // --- /create ---
+      if (req.method === 'POST' && url.pathname === '/create') {
+        try {
+          const body = (await req.json()) as {
+            instance?: string;
+            tools?: string;
+            provider?: string;
+          };
+          const { instance, tools, provider = 'google' } = body;
+
+          if (!instance) {
+            return Response.json({ error: 'Missing instance name' }, { status: 400 });
+          }
+
+          const username = await getSessionUsername(instance);
+          const apiPort = getSandboxPort(instance);
+
+          logger.info(`[API] Creating session: ${instance}`);
+
+          if (!isMock) {
+            if (!(await isUserActive(username))) {
+              await createSessionUser(instance);
+            }
+            if (!provisionedInstances.has(instance)) {
+              await provisionSession(instance, tools, provider, apiPort);
+              provisionedInstances.add(instance);
+            }
+            await ensureBridge(username, bridge, apiPort);
+          }
+
+          return Response.json({ status: 'created', instance, username });
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.error(`[API] Error creating session: ${msg}`);
+          return Response.json({ error: msg }, { status: 500 });
+        }
+      }
+
       // --- /raw-exec ---
       if (req.method === 'POST' && url.pathname === '/raw-exec') {
         try {
