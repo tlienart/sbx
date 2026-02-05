@@ -64,24 +64,27 @@ doctor:
 typecheck: setup
 	@$(BUN) run typecheck
 
-# Run the staged verification suite
-test: setup typecheck
-	@echo "🧪 Running staged verification suite..."
-	@$(BUN) scripts/stage1-auth.ts
-	@$(BUN) scripts/stage2-creation.ts
-	@$(BUN) scripts/stage3-propagation.ts
-	@$(BUN) scripts/stage4-sudoers.ts
-	@$(BUN) scripts/stage5-provision.ts
-	@$(BUN) scripts/stage6-cleanup.ts
+# Run core sandbox isolation tests
+test_sandbox: setup typecheck
+	@$(BUN) run test:sandbox
+
+# Run fast bridge bot logic tests
+test_bot: setup
+	@$(BUN) run test:bot
+
+# Run REST API integration tests
+test_e2e: setup
+	@$(BUN) run test:api
+
+# Run everything sequentially
+test_full: test_sandbox test_bot test_e2e
+
+# Standard staged verification (backwards compatibility)
+test: test_sandbox
 
 # Lint and format check
 check: typecheck
 	@$(BUN) run check
-
-# Run end-to-end integration tests
-test_e2e: setup
-	@chmod +x scripts/test_e2e.sh
-	@./scripts/test_e2e.sh
 
 # View real-time system traces
 logs:

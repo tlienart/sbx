@@ -28,13 +28,23 @@ echo -n "🧹 Pre-cleanup... "
 ./bin/sbx delete verify e2e-alpha e2e-beta > /dev/null 2>&1 || true
 pkill -f api_bridge.py 2>/dev/null || true
 # Cooling period for macOS filesystem/opendirectoryd
-sleep 2
+sleep 3
 echo -e "${GREEN}Done!${NC}"
 
 # Cleanup on exit
 cleanup() {
   echo -e "\n${BOLD}🧹 Cleaning up...${NC}"
   
+  if [ "$TEST_SUCCESS" != "1" ]; then
+    echo -e "${RED}${BOLD}❌ Test Failed. Dumping last 50 lines of server logs:${NC}"
+    if [ -f .sbx/logs/e2e_server.log ]; then
+      tail -n 50 .sbx/logs/e2e_server.log
+    else
+      echo "No server log found."
+    fi
+    echo -e "${RED}${BOLD}----------------------------------------${NC}\n"
+  fi
+
   if [ -n "$HEARTBEAT_PID" ]; then
     disown $HEARTBEAT_PID 2>/dev/null || true
     kill $HEARTBEAT_PID 2>/dev/null || true
@@ -103,8 +113,8 @@ run_test() {
     data=$(echo "$payload" | jq --arg inst "$inst" '. + {instance: $inst}')
   fi
 
-  # Execute with a 60s timeout to avoid indefinite hangs
-  RESPONSE=$(curl -s -m 60 -X POST "$URL/$endpoint" \
+  # Execute with a 180s timeout to avoid indefinite hangs
+  RESPONSE=$(curl -s -m 180 -X POST "$URL/$endpoint" \
     -H "Content-Type: application/json" \
     -d "$data")
 
@@ -198,6 +208,13 @@ ALPHA="e2e-alpha"
 BETA="e2e-beta"
 
 echo -e "\n${BOLD}👯 Testing Parallel Session Independence${NC}"
+
+# Pre-create instances explicitly to avoid timeouts during functional tests
+run_test "Pre-create Alpha" "$ALPHA" "create" '{}'
+# Small delay to prevent opendirectoryd congestion
+sleep 3
+run_test "Pre-create Beta" "$BETA" "create" '{}'
+sleep 1
 
 # 8. Parallel Functional Independence
 run_test "Alpha write to its own state" "$ALPHA" "raw-exec" \

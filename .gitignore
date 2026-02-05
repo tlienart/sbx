@@ -20,6 +20,17 @@ node_modules/
 Icon?
 ._*
 
+# Local Database (Zulip Bridge state)
+data/
+
+# Redundant Lockfiles (Bun is the source of truth)
+package-lock.json
+
+# Temporary artifacts
+tmp/
+*.bak
+archive/discobot_tmp/
+
 # Editor Specific
 .vscode/
 .idea/
