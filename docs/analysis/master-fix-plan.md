@@ -15,3 +15,7 @@ This plan consolidates the fixes for the three major issues identified in the te
 ## Task 4: Final Validation
 - **Action**: Run `make test_full` and verify all targets are Green and Readable.
 - **Status**: Completed
+
+## Task 5: Final Stabilization
+- **Action**: Harden identity probes and E2E recycling.
+- **Status**: Completed

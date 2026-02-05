@@ -28,7 +28,7 @@ echo -n "🧹 Pre-cleanup... "
 ./bin/sbx delete verify e2e-alpha e2e-beta > /dev/null 2>&1 || true
 pkill -f api_bridge.py 2>/dev/null || true
 # Cooling period for macOS filesystem/opendirectoryd
-sleep 2
+sleep 3
 echo -e "${GREEN}Done!${NC}"
 
 # Cleanup on exit
@@ -36,9 +36,9 @@ cleanup() {
   echo -e "\n${BOLD}🧹 Cleaning up...${NC}"
   
   if [ "$TEST_SUCCESS" != "1" ]; then
-    echo -e "${RED}${BOLD}❌ Test Failed. Dumping last 20 lines of server logs:${NC}"
+    echo -e "${RED}${BOLD}❌ Test Failed. Dumping last 50 lines of server logs:${NC}"
     if [ -f .sbx/logs/e2e_server.log ]; then
-      tail -n 20 .sbx/logs/e2e_server.log
+      tail -n 50 .sbx/logs/e2e_server.log
     else
       echo "No server log found."
     fi
