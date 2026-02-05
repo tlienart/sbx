@@ -125,7 +125,6 @@ export async function isUserActive(username: string): Promise<boolean> {
 async function isNetworkReady(username: string): Promise<boolean> {
   try {
     // Try to reach a reliable IP or resolve a common domain.
-    // We use a shorter timeout for individual attempts but retry in the outer loop.
     const res = await runAsUser(
       username,
       'ping -c 1 -t 1 8.8.8.8 >/dev/null || ping -c 1 -t 1 github.com >/dev/null || host -W 1 google.com >/dev/null',
@@ -153,59 +152,60 @@ async function isIdentityReady(username: string): Promise<boolean> {
 }
 
 /**
- * Polls until the user is recognized by the system and network is ready.
+ * Linearized check for user readiness.
+ * Stage 1: Wait for OS record (id)
+ * Stage 2: Wait for Shell Identity (su)
+ * Stage 3: Wait for Network Connectivity (ping)
  */
-async function waitForUserReady(username: string, maxAttempts = 40): Promise<void> {
-  let identityReady = false;
-
-  for (let i = 0; i < maxAttempts; i++) {
-    const active = await isUserActive(username);
-    if (active) {
-      if (!identityReady) {
-        if (await isIdentityReady(username)) {
-          identityReady = true;
-          logger.debug(`User identity confirmed for ${username}.`);
-        } else {
-          logger.debug(`Waiting for ${username} to accept commands (Identity not ready)...`);
-          // Flush directory service cache if identity is not ready
-          await sudoRun('dscacheutil', ['-flushcache']);
-          try {
-            await sudoRun('killall', ['-HUP', 'opendirectoryd']);
-          } catch {
-            /* ignore */
-          }
-        }
-      }
-
-      if (identityReady) {
-        // Give the system a moment to finish plumbing the user session
-        await new Promise((r) => setTimeout(r, 1000));
-
-        // Once identity is ready, wait for network to stabilize
-        if (await isNetworkReady(username)) return;
-        logger.debug(`Waiting for network to stabilize for ${username}...`);
-      }
-    } else {
-      logger.debug(`Waiting for user ${username} to become active...`);
-      // Flush directory service cache
-      await sudoRun('dscacheutil', ['-flushcache']);
-      try {
-        await sudoRun('killall', ['-HUP', 'opendirectoryd']);
-      } catch {
-        /* ignore if fails */
-      }
+async function waitForUserReady(username: string): Promise<void> {
+  // Stage 1: Unix Identity propagation (30s)
+  let stage1Ok = false;
+  for (let i = 0; i < 30; i++) {
+    if (await isUserActive(username)) {
+      stage1Ok = true;
+      break;
     }
-    // Faster polling: 1 second instead of 2
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    logger.debug(`[Stage 1] Waiting for ${username} record to propagate...`);
+    await sudoRun('dscacheutil', ['-flushcache']);
+    try {
+      await sudoRun('killall', ['-HUP', 'opendirectoryd']);
+    } catch {}
+    await new Promise((r) => setTimeout(r, 1000));
   }
+  if (!stage1Ok) throw new Error(`User ${username} record failed to propagate within 30s.`);
 
-  const finalActive = await isUserActive(username);
-  const finalIdentity = await isIdentityReady(username);
-  const finalNetwork = await isNetworkReady(username);
+  // Stage 2: Shell/Sudoers Identity readiness (30s)
+  let stage2Ok = false;
+  for (let i = 0; i < 30; i++) {
+    if (await isIdentityReady(username)) {
+      stage2Ok = true;
+      break;
+    }
+    logger.debug(`[Stage 2] Waiting for ${username} shell to accept commands...`);
+    await sudoRun('dscacheutil', ['-flushcache']);
+    try {
+      await sudoRun('killall', ['-HUP', 'opendirectoryd']);
+    } catch {}
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  if (!stage2Ok) throw new Error(`User ${username} shell failed to become ready within 30s.`);
 
-  throw new Error(
-    `User ${username} setup timed out (active: ${finalActive}, identity: ${finalIdentity}, network: ${finalNetwork}).`,
-  );
+  // Give the system a tiny moment to settle before network probe
+  await new Promise((r) => setTimeout(r, 1000));
+
+  // Stage 3: Network Connectivity (60s - can be slow on fresh users)
+  let stage3Ok = false;
+  for (let i = 0; i < 60; i++) {
+    if (await isNetworkReady(username)) {
+      stage3Ok = true;
+      break;
+    }
+    if (i % 5 === 0) logger.debug(`[Stage 3] Waiting for network connectivity for ${username}...`);
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  if (!stage3Ok) throw new Error(`User ${username} network failed to initialize within 60s.`);
+
+  logger.success(`User ${username} is fully operational.`);
 }
 
 /**
@@ -235,12 +235,10 @@ export async function createSessionUser(instanceName: string): Promise<string> {
     const pw = generateRandomPassword(64);
 
     // Launch sysadminctl with piped stdio to avoid terminal drift.
-    // We don't await it forever because it hangs on housekeeping.
     const subprocess = execa('sudo', ['sysadminctl', '-addUser', username, '-password', pw], {
       stdio: 'pipe',
     });
 
-    // Handle termination to avoid unhandled promise rejection crashes
     subprocess.catch((err) => {
       logger.debug(`sysadminctl subprocess ended: ${err.message}`);
     });
@@ -248,7 +246,6 @@ export async function createSessionUser(instanceName: string): Promise<string> {
     // Race: Wait for the user record to appear in Directory Service
     let resolved = false;
     for (let i = 0; i < 60; i++) {
-      // 30 seconds max
       if (await userExists(username)) {
         resolved = true;
         break;
@@ -263,8 +260,7 @@ export async function createSessionUser(instanceName: string): Promise<string> {
       );
     }
 
-    // Kill the hanging sysadminctl process - we have what we need (the record)
-    // Give it 3 more seconds to finish any housekeeping
+    // Kill the hanging sysadminctl process after a grace period
     setTimeout(() => {
       try {
         subprocess.kill('SIGKILL');
@@ -284,8 +280,6 @@ export async function createSessionUser(instanceName: string): Promise<string> {
     logger.success(`User identity ${username} captured.`);
   }
 
-  // Ensure the home directory exists and is correctly owned BEFORE readiness checks
-  // (su - depends on a readable home directory)
   const homeDir = `/Users/${username}`;
 
   // Ground truth UID resolution
@@ -293,7 +287,7 @@ export async function createSessionUser(instanceName: string): Promise<string> {
   const currentUid = await getNumericUid(username);
 
   if (fs.existsSync(homeDir)) {
-    // Check for UID mismatch (common in rapid user recycling on macOS)
+    // Check for UID mismatch
     try {
       const { stdout: dirUidStr } = await sudoRun('stat', ['-f', '%u', homeDir]);
       const dirUid = dirUidStr.trim();
@@ -318,17 +312,9 @@ export async function createSessionUser(instanceName: string): Promise<string> {
   await sudoRun('chown', [`${currentUid}:20`, homeDir]); // 20 is 'staff' GID
   await sudoRun('chmod', ['700', homeDir]);
 
-  // --- CRITICAL: KEY REORDERING ---
-  // We MUST setup sudoers and ACLs BEFORE waiting for user readiness.
-  // The readiness check uses 'su -' which requires sudoers permission (for nopasswd)
-  // and the home directory bits/ACLs to be correctly set for the host bridge.
-
   logger.info(`Configuring host access (sudoers & ACLs) for ${username}...`);
   await sudoers.setup(instanceName);
   await ensureHostAccessToSandbox(username);
-
-  // Give the system a moment to settle the filesystem/TCC metadata
-  await new Promise((r) => setTimeout(r, 2000));
 
   // Wait for the system to recognize the new user and network to be ready
   await waitForUserReady(username);
@@ -348,10 +334,8 @@ export async function deleteSessionUser(instanceName: string): Promise<void> {
   }
 
   logger.info(`Deleting user session: ${username}...`);
-  // -deleteUser <name> deletes the user and home directory
   await sudoRun('sysadminctl', ['-deleteUser', username]);
 
-  // Wait for the user record to be completely removed (Synchronous delete)
   for (let i = 0; i < 20; i++) {
     if (!(await userExists(username))) {
       logger.debug(`User ${username} record removed.`);

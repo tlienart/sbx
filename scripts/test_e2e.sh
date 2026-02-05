@@ -35,6 +35,16 @@ echo -e "${GREEN}Done!${NC}"
 cleanup() {
   echo -e "\n${BOLD}🧹 Cleaning up...${NC}"
   
+  if [ "$TEST_SUCCESS" != "1" ]; then
+    echo -e "${RED}${BOLD}❌ Test Failed. Dumping last 20 lines of server logs:${NC}"
+    if [ -f .sbx/logs/e2e_server.log ]; then
+      tail -n 20 .sbx/logs/e2e_server.log
+    else
+      echo "No server log found."
+    fi
+    echo -e "${RED}${BOLD}----------------------------------------${NC}\n"
+  fi
+
   if [ -n "$HEARTBEAT_PID" ]; then
     disown $HEARTBEAT_PID 2>/dev/null || true
     kill $HEARTBEAT_PID 2>/dev/null || true

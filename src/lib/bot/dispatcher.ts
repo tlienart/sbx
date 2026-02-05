@@ -190,9 +190,17 @@ export class BotDispatcher {
 
     console.log(`Relaying message to sandbox ${sandboxId}: ${msg.content}`);
 
-    // Simulate long output
+    // Simulate agent response
     setTimeout(async () => {
-      const mockResponse = `## Summary\nI've processed your request: "${msg.content}".\nThis is a mock response from the agent.\n\n${'Detail '.repeat(5)}`;
+      const mockResponse = `## Summary
+I've completed the task. I initialized a new repository, configured the environment, and verified all permissions are correctly set.
+
+### Key Results
+- Repository initialized in \`/tmp/new-repo\`
+- Sandbox user isolation verified
+- All tests passed successfully
+
+The system is now ready for further development. Mode: **${getAgentState(sandboxId)?.mode}**.`;
 
       const summary = extractSummary(mockResponse);
       const chunks = splitMessage(summary);
