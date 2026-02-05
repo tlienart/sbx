@@ -3,6 +3,9 @@
   "organizeImports": {
     "enabled": true
   },
+  "files": {
+    "ignore": ["archive/**", "tmp/**", "data/**"]
+  },
   "linter": {
     "enabled": true,
     "rules": {

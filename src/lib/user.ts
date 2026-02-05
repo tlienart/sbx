@@ -166,7 +166,14 @@ async function waitForUserReady(username: string, maxAttempts = 40): Promise<voi
           identityReady = true;
           logger.debug(`User identity confirmed for ${username}.`);
         } else {
-          logger.debug(`Waiting for ${username} to accept commands...`);
+          logger.debug(`Waiting for ${username} to accept commands (Identity not ready)...`);
+          // Flush directory service cache if identity is not ready
+          await sudoRun('dscacheutil', ['-flushcache']);
+          try {
+            await sudoRun('killall', ['-HUP', 'opendirectoryd']);
+          } catch {
+            /* ignore */
+          }
         }
       }
 
@@ -240,8 +247,8 @@ export async function createSessionUser(instanceName: string): Promise<string> {
 
     // Race: Wait for the user record to appear in Directory Service
     let resolved = false;
-    for (let i = 0; i < 40; i++) {
-      // 20 seconds max
+    for (let i = 0; i < 60; i++) {
+      // 30 seconds max
       if (await userExists(username)) {
         resolved = true;
         break;
@@ -252,18 +259,19 @@ export async function createSessionUser(instanceName: string): Promise<string> {
     if (!resolved) {
       subprocess.kill('SIGKILL');
       throw new Error(
-        `Failed to create user record for ${username} within 20s. Please check for a system popup.`,
+        `Failed to create user record for ${username} within 30s. Please check for a system popup.`,
       );
     }
 
     // Kill the hanging sysadminctl process - we have what we need (the record)
+    // Give it 3 more seconds to finish any housekeeping
     setTimeout(() => {
       try {
         subprocess.kill('SIGKILL');
       } catch {
         /* ignore */
       }
-    }, 1000);
+    }, 3000);
 
     // Force system cache update
     await sudoRun('dscacheutil', ['-flushcache']);
