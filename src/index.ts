@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { Command } from 'commander';
+import { botCommand } from './commands/bot.ts';
 import { cleanupCommand } from './commands/cleanup.ts';
 import { createCommand } from './commands/create.ts';
 import { deleteCommand } from './commands/delete.ts';
@@ -46,5 +47,7 @@ program
   .description('Start the SBX API server')
   .option('-p, --port <number>', 'port to listen on', '3000')
   .action(serveCommand);
+
+program.command('bot').description('Start the SBX Zulip bot').action(botCommand);
 
 program.parse();

@@ -33,10 +33,18 @@ db.run(`
     sandbox_id TEXT PRIMARY KEY,
     mode TEXT NOT NULL,
     status TEXT NOT NULL CHECK (status IN ('idle', 'thinking', 'writing')),
+    opencode_session_id TEXT,
     last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (sandbox_id) REFERENCES sandboxes(id) ON DELETE CASCADE
   );
 `);
+
+// Migration: add opencode_session_id if it doesn't exist
+try {
+  db.run('ALTER TABLE agent_states ADD COLUMN opencode_session_id TEXT');
+} catch (err) {
+  // Column already exists or table doesn't exist yet (handled by CREATE TABLE)
+}
 
 export const sessionRepo = {
   getSandboxId: (platform: string, externalId: string): string | undefined => {

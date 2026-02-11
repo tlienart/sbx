@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import db from './db.ts';
 import { provisionSession } from './provision.ts';
-import { createSessionUser, deleteSessionUser } from './user.ts';
+import { createSessionUser, deleteSessionUser, getSandboxPort } from './user.ts';
 
 export interface Sandbox {
   id: string;
@@ -14,6 +14,7 @@ export async function createSandbox(name?: string): Promise<Sandbox> {
   const id = uuidv4();
   // We use the first part of the UUID as the instance name
   const instanceName = id.split('-')[0] as string;
+  const apiPort = getSandboxPort(instanceName);
 
   const sandbox: Sandbox = {
     id,
@@ -24,7 +25,7 @@ export async function createSandbox(name?: string): Promise<Sandbox> {
 
   if (!process.env.SKIP_PROVISION) {
     await createSessionUser(instanceName);
-    await provisionSession(instanceName);
+    await provisionSession(instanceName, undefined, undefined, apiPort);
   } else {
     console.log(`[Mock] Skipping provisioning for ${instanceName}`);
   }

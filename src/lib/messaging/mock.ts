@@ -19,11 +19,19 @@ export class MockMessaging implements MessagingPlatform {
     console.log(`[Mock Send] Channel: ${channelId}, Content: ${content}`);
   }
 
+  async addReaction(channelId: string, messageId: string, emoji: string): Promise<void> {
+    console.log(`[Mock Reaction] Channel: ${channelId}, Message: ${messageId}, Emoji: ${emoji}`);
+  }
+
   async createChannel(name: string): Promise<string> {
     const id = `mock:sbx-${name.toLowerCase().replace(/[^a-z0-9-]/g, '-')}`;
     this.channels.set(id, name);
     console.log(`[Mock Create] Name: ${name}, ID: ${id}`);
     return id;
+  }
+
+  async listChannels(): Promise<string[]> {
+    return Array.from(this.channels.keys());
   }
 
   onMessage(handler: MessageHandler): void {

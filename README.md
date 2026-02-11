@@ -205,6 +205,50 @@ By default, the host user can run commands as the sandbox user without a passwor
 
 In summary, Sbx is intended to make running coding agents **safer when running in "yolo" mode** on your main account, providing a disposable environment with full sudo access while keeping your host user space protected.
 
+## Zulip Integration
+
+You can interact with Sbx sandboxes through Zulip. This allows you to manage multiple sandboxes as separate topics in a stream.
+
+### 1. Zulip Bot Setup
+1. **Create Organization**: If you don't have one, create a free organization at [zulipchat.com](https://zulipchat.com/new/).
+2. **Create a Bot**:
+   - Go to **Settings** (gear icon) -> **Personal settings** -> **Bots** -> **Add a new bot**.
+   - **Bot type**: Generic bot.
+   - **Full name**: `Sbx Bot`
+   - **Bot email**: Take note of the generated email (e.g., `sbx-bot@yourorg.zulipchat.com`).
+   - Click **Create bot**.
+3. **Get Credentials**:
+   - Click the **Download zuliprc** (download icon) in the bot list.
+   - Open the downloaded file to find your `api_key`.
+   - Note your organization's URL (e.g., `https://yourorg.zulipchat.com`).
+
+### 2. Environment Configuration
+Add the following to your host's `.env` file or export them in your shell:
+```bash
+SBX_ZULIP_SITE="https://yourorg.zulipchat.com"
+SBX_ZULIP_USERNAME="sbx-bot@yourorg.zulipchat.com"
+SBX_ZULIP_API_KEY="your_api_key_here"
+SBX_ZULIP_DEFAULT_STREAM="general"
+```
+
+### 3. Starting the Bot
+Run the following command on your host:
+```bash
+sbx bot
+```
+
+### 4. Testing the Bridge
+1. In Zulip, send a message to the bot (or in the default stream): `/new my-task`.
+2. The bot will create a new topic named `sbx-my-task`.
+3. In that topic, send a prompt like: `opencode "say hello"`.
+4. The request will flow from Zulip -> Bot -> Sandbox -> Host Bridge -> LLM Provider and back.
+5. **Multi-turn conversation**: The bot remembers context within each topic. To start fresh, use the `/restart` command in the topic.
+6. **Utility Commands**:
+   - `/status`: Check the bot and agent status.
+   - `/mode`: List available modes.
+   - `/switch <mode>`: Switch between `plan`, `build`, and `research`.
+   - `/interrupt`: Stop the current running task.
+
 ## License
 
 MIT

@@ -32,6 +32,14 @@ export interface ExecOptions extends Options {
    * Optional timeout in milliseconds.
    */
   timeoutMs?: number;
+  /**
+   * Callback for real-time stdout.
+   */
+  onStdout?: (data: string) => void;
+  /**
+   * Callback for real-time stderr.
+   */
+  onStderr?: (data: string) => void;
 }
 
 export interface RunResult {
@@ -86,6 +94,24 @@ export async function run(
   const { silent = true, timeoutMs = 120000, ...execaOptions } = options;
 
   const commandStr = `${file} ${args.join(' ')}`;
+
+  if (process.env.SKIP_PROVISION) {
+    const isSandboxOp =
+      file === 'sysadminctl' ||
+      (file === 'sudo' && args.some((arg) => arg.includes('sbx_'))) ||
+      (file === 'su' && args.some((arg) => arg.includes('sbx_')));
+
+    if (isSandboxOp) {
+      trace(`MOCK EXEC: ${commandStr}`);
+      return {
+        stdout: '',
+        stderr: '',
+        exitCode: 0,
+        command: commandStr,
+      };
+    }
+  }
+
   trace(`EXEC: ${commandStr}`);
 
   const subprocess = execa(file, args, {
@@ -93,6 +119,18 @@ export async function run(
     timeout: timeoutMs,
     all: true,
   });
+
+  if (options.onStdout && subprocess.stdout) {
+    subprocess.stdout.on('data', (chunk) => {
+      options.onStdout?.(chunk.toString());
+    });
+  }
+
+  if (options.onStderr && subprocess.stderr) {
+    subprocess.stderr.on('data', (chunk) => {
+      options.onStderr?.(chunk.toString());
+    });
+  }
 
   // Heartbeat/Watchdog
   let elapsed = 0;

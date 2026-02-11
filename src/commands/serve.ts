@@ -17,52 +17,6 @@ interface ServeOptions {
   port: string;
 }
 
-async function ensureBridge(username: string, bridge: SbxBridge, port: number) {
-  const sandboxLogDir = `/Users/${username}/.sbx/logs`;
-  const env = {
-    BRIDGE_SOCK: bridge.getSocketPaths().command,
-    PROXY_SOCK: bridge.getSocketPaths().proxy,
-  };
-
-  // Check if already running on this port
-  try {
-    const check = await runAsUser(username, `nc -z 127.0.0.1 ${port}`);
-    if (check.exitCode === 0) {
-      logger.debug(`[API] Bridge already running for ${username} on port ${port}`);
-      return;
-    }
-  } catch {
-    /* ignore */
-  }
-
-  logger.info(`[API] Starting API bridge for ${username} on port ${port}...`);
-
-  // Try to clean up any dead process on this port just in case
-  try {
-    execSync(`sudo lsof -ti:${port} | xargs sudo kill -9 || true`);
-  } catch {
-    /* ignore */
-  }
-
-  await runAsUser(
-    username,
-    `mkdir -p ${sandboxLogDir} && nohup python3 -u /Users/${username}/.sbx/bin/api_bridge.py ${port} >${sandboxLogDir}/api_bridge.log 2>&1 &`,
-    { env },
-  );
-
-  // Wait for the port to be open
-  for (let i = 0; i < 15; i++) {
-    try {
-      const check = await runAsUser(username, `nc -z 127.0.0.1 ${port}`);
-      if (check.exitCode === 0) return;
-    } catch {
-      /* ignore */
-    }
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  throw new Error(`Timed out waiting for API bridge to start on port ${port}`);
-}
-
 export async function serveCommand(options: ServeOptions) {
   const port = Number.parseInt(options.port, 10);
   const hostUser = await getHostUser();
@@ -140,7 +94,7 @@ export async function serveCommand(options: ServeOptions) {
               await provisionSession(instance, tools, provider, apiPort);
               provisionedInstances.add(instance);
             }
-            await ensureBridge(username, bridge, apiPort);
+            await bridge.attachToSandbox(username, apiPort);
           }
 
           return Response.json({ status: 'created', instance, username });
@@ -172,7 +126,7 @@ export async function serveCommand(options: ServeOptions) {
               await provisionSession(instance, undefined, undefined, apiPort);
               provisionedInstances.add(instance);
             }
-            await ensureBridge(username, bridge, apiPort);
+            await bridge.attachToSandbox(username, apiPort);
           }
 
           logger.info(`[API] Executing in ${instance}: ${command}`);
@@ -238,7 +192,7 @@ export async function serveCommand(options: ServeOptions) {
               await provisionSession(instance, undefined, provider, apiPort);
               provisionedInstances.add(instance);
             }
-            await ensureBridge(username, bridge, apiPort);
+            await bridge.attachToSandbox(username, apiPort);
           }
 
           logger.info(

@@ -1,7 +1,11 @@
 # Detect Bun - fall back to home directory installation if not in PATH
 BUN := $(shell command -v bun || echo $(HOME)/.bun/bin/bun)
 
-.PHONY: install setup clean test logs doctor check create list delete exec test_e2e typecheck
+.PHONY: install setup clean test logs doctor check create list delete exec test_e2e typecheck start lint
+
+# Start the SBX Zulip bot
+start: setup
+	./bin/sbx bot
 
 # Install pkgx and Bun if missing and setup the project
 install:
@@ -45,7 +49,7 @@ delete:
 # Aggressively clean up all sbx related artifacts
 clean:
 	@echo "🧹 Cleaning up sbx sessions and processes..."
-	-@sudo pkill -9 sysadminctl su sbx || true
+	-@sudo pkill -9 -f "sysadminctl|su - sbx_.*|api_bridge.py" 2>/dev/null || true
 	-@dscl . -list /Users | grep $(USER_PREFIX) | while read user; do \
 		echo "Deleting user: $$user"; \
 		sudo sysadminctl -deleteUser $$user || true; \
@@ -63,6 +67,10 @@ doctor:
 # Type check the codebase
 typecheck: setup
 	@$(BUN) run typecheck
+
+# Lint the codebase
+lint: setup
+	@$(BUN) run lint
 
 # Run core sandbox isolation tests
 test_sandbox: setup typecheck

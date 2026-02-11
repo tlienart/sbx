@@ -1,6 +1,7 @@
 export interface IncomingMessage {
   platform: string;
   channelId: string; // Generic identifier (e.g., Discord channel ID or Zulip stream/topic)
+  messageId?: string; // Platform-specific message identifier
   userId: string;
   userName: string;
   content: string;
@@ -29,11 +30,21 @@ export interface MessagingPlatform {
   sendMessage(channelId: string, content: string): Promise<void>;
 
   /**
+   * Add a reaction to a specific message
+   */
+  addReaction(channelId: string, messageId: string, emoji: string): Promise<void>;
+
+  /**
    * Create a new channel or thread/topic
    * @param name The name of the channel/thread
    * @returns The ID of the created channel
    */
   createChannel(name: string): Promise<string>;
+
+  /**
+   * List all active channels/topics the bot has access to
+   */
+  listChannels(): Promise<string[]>;
 
   /**
    * Register a callback for incoming messages
