@@ -20,6 +20,7 @@ export interface Sandbox {
  * Checks if the sandbox is still alive on the host (i.e., the macOS user exists).
  */
 export async function isSandboxAlive(id: string): Promise<boolean> {
+  if (process.env.SKIP_PROVISION) return true;
   const instanceName = id.split('-')[0] as string;
   const username = await getSessionUsername(instanceName);
   return userExists(username);

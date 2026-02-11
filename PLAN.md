@@ -23,9 +23,19 @@ The SBX bot should gracefully handle cases where a sandbox's macOS user has been
     1. A message to a missing sandbox triggers notification and recreation.
     2. A bot restart does NOT wipe existing session mappings even if users are missing.
 
-### Manual Verification Cycle
-1. Create a sandbox: `/new demo-fix`.
-2. Send a message to verify.
-3. Stop bot and run `make clean`.
-4. Start bot and send another message in the same topic.
-5. **Expected**: Bot notifies about recovery and continues the session in a new identity.
+## Regression Fix: `test-bot.ts` failure [x]
+
+The `test-bot.ts` script uses `SKIP_PROVISION=1`, which causes `isSandboxAlive` to return `false` (since no user is created), triggering an unwanted recovery cycle during tests.
+
+### 4. `src/lib/sandbox.ts` (Correction) [x]
+- Update `isSandboxAlive` to return `true` immediately if `process.env.SKIP_PROVISION` is set. This avoids "Recovery loops" in testing/mock environments.
+
+### 5. Verification [x]
+- Run `make test_bot` and ensure it passes. [x]
+
+### Manual Verification Cycle [x]
+1. Create a sandbox: `/new demo-fix`. [x]
+2. Send a message to verify. [x]
+3. Stop bot and run `make clean`. [x]
+4. Start bot and send another message in the same topic. [x]
+5. **Expected**: Bot notifies about recovery and continues the session in a new identity. [x]
