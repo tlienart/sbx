@@ -25,7 +25,7 @@ export async function provisionSession(
   instanceName: string,
   tools?: string,
   provider = 'google',
-  apiPort = 9999,
+  apiPort = 9999, // Standard fallback
 ): Promise<void> {
   await ensurePkgxOnHost();
   const sessionUser = await getSessionUsername(instanceName);
@@ -122,9 +122,9 @@ def main():
     command = "git"
     args = sys.argv[1:]
     
-    # Selective bridging: only bridge commands that might need secrets
-    remote_ops = {"push", "pull", "fetch", "clone", "ls-remote", "remote"}
-    needs_bridge = any(arg in remote_ops for arg in args)
+    # Selective bridging: only bridge commands that might need secrets or are sensitive
+    bridged_ops = {"push", "pull", "fetch", "clone", "ls-remote", "remote", "config", "credential"}
+    needs_bridge = any(arg in bridged_ops for arg in args)
     
     socket_path = os.environ.get("BRIDGE_SOCK")
     
@@ -330,7 +330,7 @@ if __name__ == "__main__":
   }
 }
 
-async function deployOpenCodeConfig(
+export async function deployOpenCodeConfig(
   sessionUser: string,
   provider: string,
   apiPort: number,

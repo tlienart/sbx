@@ -10,7 +10,7 @@
   "scripts": {
     "start": "bun src/index.ts",
     "test": "bun run test:sandbox",
-    "test:sandbox": "bun scripts/stage1-auth.ts && bun scripts/stage2-creation.ts && bun scripts/stage3-propagation.ts && bun scripts/stage4-sudoers.ts && bun scripts/stage5-provision.ts && bun scripts/stage6-cleanup.ts",
+    "test:sandbox": "bun scripts/stage1-auth.ts && bun scripts/stage2-creation.ts && bun scripts/stage3-propagation.ts && bun scripts/stage4-sudoers.ts && bun scripts/stage5-provision.ts && bun scripts/stage6-bridge-git.ts && bun scripts/stage7-cleanup.ts",
     "test:bot": "SKIP_PROVISION=1 bun scripts/test-bot.ts",
     "test:e2e": "bun scripts/verify-e2e.ts",
     "test:api": "bash scripts/test_e2e.sh",

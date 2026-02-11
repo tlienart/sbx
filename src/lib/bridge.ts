@@ -5,6 +5,7 @@ import https from 'node:https';
 import { join, resolve } from 'node:path';
 import { type Socket, type SocketListener, listen, spawn } from 'bun';
 
+import { runAsUser } from './exec.ts';
 import { logger } from './logger.ts';
 import 'dotenv/config';
 
@@ -90,10 +91,11 @@ export class SbxBridge {
         data: async (socket, data) => {
           try {
             const request: BridgeRequest = JSON.parse(data.toString());
+            logger.debug(`[Bridge] Received request: ${JSON.stringify(request)}`);
             await this.handleRequest(socket, request);
           } catch (error) {
             logger.error(`[Bridge] Error handling data: ${error}`);
-            socket.write(JSON.stringify({ type: 'error', message: String(error) }));
+            socket.write(`${JSON.stringify({ type: 'error', message: String(error) })}\n`);
             socket.end();
           }
         },
@@ -242,7 +244,7 @@ export class SbxBridge {
     const allowedCommands = ['gh', 'git', 'opencode', 'ls'];
     if (!allowedCommands.includes(request.command)) {
       socket.write(
-        JSON.stringify({ type: 'error', message: `Command ${request.command} not allowed` }),
+        `${JSON.stringify({ type: 'error', message: `Command ${request.command} not allowed` })}\n`,
       );
       socket.end();
       return;
@@ -250,7 +252,10 @@ export class SbxBridge {
 
     const validationError = this.validateArgs(request.command, request.args);
     if (validationError) {
-      socket.write(JSON.stringify({ type: 'error', message: validationError }));
+      logger.warn(
+        `[Bridge] Blocking command ${request.command} ${request.args.join(' ')}: ${validationError}`,
+      );
+      socket.write(`${JSON.stringify({ type: 'error', message: validationError })}\n`);
       socket.end();
       return;
     }
@@ -259,6 +264,22 @@ export class SbxBridge {
     if (!existsSync(isolatedHome)) {
       mkdirSync(isolatedHome, { recursive: true });
       chmodSync(isolatedHome, 0o700);
+    }
+
+    // Initialize isolated .gitconfig if it doesn't exist
+    const gitConfigFile = join(isolatedHome, '.gitconfig');
+    if (!existsSync(gitConfigFile)) {
+      const config = [
+        '[credential]',
+        '\thelper = ',
+        '\thelper = !gh auth git-credential',
+        '[core]',
+        '\tsshCommand = ssh -o BatchMode=yes',
+        '[protocol]',
+        '\tallow = always',
+      ].join('\n');
+      execSync(`cat <<EOF > ${gitConfigFile}\n${config}\nEOF`);
+      chmodSync(gitConfigFile, 0o600);
     }
 
     const commandPath = this.binaryPaths[request.command] || request.command;
@@ -287,12 +308,14 @@ export class SbxBridge {
           GH_TOKEN: this.githubToken,
           GITHUB_TOKEN: this.githubToken,
           // Git isolation
-          GIT_CONFIG_GLOBAL: join(isolatedHome, '.gitconfig'),
+          GIT_CONFIG_GLOBAL: gitConfigFile,
           GIT_CONFIG_NOSYSTEM: '1',
           GIT_AUTHOR_NAME: 'SBX Sandbox',
           GIT_AUTHOR_EMAIL: 'sbx@localhost',
           GIT_COMMITTER_NAME: 'SBX Sandbox',
           GIT_COMMITTER_EMAIL: 'sbx@localhost',
+          GIT_TERMINAL_PROMPT: '0',
+          GIT_ASKPASS: 'true',
           // Clear any other gh related env vars to ensure we use our token
           GITHUB_USER: '',
           GH_USER: '',
@@ -334,19 +357,30 @@ export class SbxBridge {
 
   private validateArgs(command: string, args: string[]): string | null {
     if (command === 'git') {
-      const blocked = ['--exec-path', '--config', '-c', '--upload-pack', '--receive-pack'];
+      const blocked = [
+        '--exec-path',
+        '--config',
+        '-c',
+        '--upload-pack',
+        '--receive-pack',
+        'config',
+        'credential',
+      ];
       for (const arg of args) {
         if (blocked.some((b) => arg === b || arg.startsWith(`${b}=`))) {
-          return `Flag '${arg}' is not allowed for security reasons.`;
+          return `Flag or subcommand '${arg}' is not allowed for security reasons.`;
         }
       }
     }
     if (command === 'gh') {
-      const blocked = ['alias', 'extension'];
+      const blocked = ['alias', 'extension', 'config', 'secret'];
       for (const arg of args) {
         if (blocked.includes(arg)) {
           return `Subcommand '${arg}' is not allowed for security reasons.`;
         }
+      }
+      if (args.includes('auth') && !args.includes('status')) {
+        return "Subcommand 'auth' (except 'status') is not allowed for security reasons.";
       }
     }
     return null;
@@ -357,6 +391,58 @@ export class SbxBridge {
     this.proxyServer?.close();
     if (existsSync(this.socketPath)) unlinkSync(this.socketPath);
     if (existsSync(this.proxySocketPath)) unlinkSync(this.proxySocketPath);
+  }
+
+  async attachToSandbox(username: string, port: number): Promise<void> {
+    if (process.env.SKIP_PROVISION) {
+      logger.debug(`[Bridge] Mock skipping attach to ${username} on port ${port}`);
+      return;
+    }
+    const sandboxLogDir = `/Users/${username}/.sbx/logs`;
+    const env = {
+      BRIDGE_SOCK: this.getSocketPaths().command,
+      PROXY_SOCK: this.getSocketPaths().proxy,
+    };
+
+    // Check if already running on this port
+    try {
+      const check = await runAsUser(username, `nc -z 127.0.0.1 ${port}`);
+      if (check.exitCode === 0) {
+        logger.debug(`[Bridge] Already attached to ${username} on port ${port}`);
+        return;
+      }
+    } catch {
+      /* ignore */
+    }
+
+    logger.info(`[Bridge] Attaching to ${username} on port ${port}...`);
+
+    // Try to clean up any dead process on this port just in case
+    try {
+      execSync(`sudo lsof -ti:${port} | xargs sudo kill -9 || true`);
+    } catch {
+      /* ignore */
+    }
+
+    await runAsUser(
+      username,
+      `mkdir -p ${sandboxLogDir} && nohup python3 -u /Users/${username}/.sbx/bin/api_bridge.py ${port} >${sandboxLogDir}/api_bridge.log 2>&1 &`,
+      { env },
+    );
+
+    // Wait for the port to be open
+    for (let i = 0; i < 15; i++) {
+      try {
+        const check = await runAsUser(username, `nc -z 127.0.0.1 ${port}`);
+        if (check.exitCode === 0) return;
+      } catch {
+        /* ignore */
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    throw new Error(
+      `Timed out waiting for API bridge to start in sandbox ${username} on port ${port}`,
+    );
   }
 
   getSocketPaths() {

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "google/gemini-3-flash-preview",
+  "default_agent": "plan",
+  "permission": {
+    "bash": {
+      "ls*": "allow",
+      "mkdir*": "allow",
+      "git push*": "allow",
+      "git checkout*": "allow",
+      "git add*": "allow",
+      "git commit*": "ask",
+      "git status*": "allow",
+      "git log*": "allow",
+      "git diff*": "allow",
+      "git branch*": "allow",
+      "git merge*": "deny",
+      "git checkout main": "deny",
+      "git checkout master": "deny",
+      "git push origin main": "deny",
+      "git push origin master": "deny",
+      "rm*": "deny",
+      "mv*": "ask"
+    }
+  },
+  "experimental": {
+    "bash_default_timeout_ms": 600000
+  },
+  "agent": {
+    "plan": {
+      "color": "#3B82F6",
+      "mode": "primary",
+      "default": true,
+      "model": "google/gemini-3-flash-preview",
+      "description": "High-intelligence architect. Creates the roadmap using Claude Opus.",
+      "prompt": "You are the Planning Agent (Opus 4.5). \n\nGOAL: Create a clear, step-by-step implementation plan in `PLAN.md` (or update existing plans).\n\nRULES:\n1. You are an ARCHITECT, not a builder. You MUST NOT modify source code or configuration files (except .md).\n2. Read the existing code structure to understand context.\n3. Write/Edit `PLAN.md` with a checklist of tasks.\n4. Once the plan is written, STOP and prompt the user: 'Plan updated. Switch to build agent?'\n\nCRITICAL: Do not try to implement the plan yourself. Your context window is valuable; save it for reasoning.",
+      "permission": {
+        "write": {
+          "*.md": "allow"
+        },
+        "edit": {
+          "*.md": "allow"
+        }
+      }
+    },
+    "build": {
+      "color": "#D946EF",
+      "mode": "primary",
+      "model": "google/gemini-3-flash-preview",
+      "description": "Fast implementation engine using Gemini 3 Flash.",
+      "prompt": "You are the Build Agent (Gemini 3 Flash). \n\nGOAL: Implement features defined in `PLAN.md`.\n\nRULES:\n1. ALWAYS read `PLAN.md` first.\n2. Pick the next unchecked item in the plan.\n3. Implement ONLY that item. Do not try to do the whole project in one turn.\n4. After implementing, mark the item as [x] in `PLAN.md`.\n5. STOP and ask: 'Task complete. Run tests or continue?'\n\nCRITICAL: If you get stuck or find the plan is wrong, STOP and ask the user to switch back to the 'plan' agent. Do not improvise architecture.",
+      "permission": {
+        "write": {
+          "*": "allow"
+        }
+      }
+    }
+  }
+}

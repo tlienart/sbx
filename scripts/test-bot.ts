@@ -5,6 +5,8 @@ import { logger } from '../src/lib/logger.ts';
 import { MockMessaging } from '../src/lib/messaging/mock.ts';
 import { listSandboxes } from '../src/lib/sandbox.ts';
 
+import { SbxBridge } from '../src/lib/bridge.ts';
+
 async function runBotTest() {
   console.log(chalk.bold.cyan('\n🤖 Testing Bridge Bot Logic (Isolated)\n'));
 
@@ -14,8 +16,9 @@ async function runBotTest() {
   try {
     // 1. Setup
     logger.info('Initializing Mock Messaging and Dispatcher...');
+    const bridge = new SbxBridge('test-host');
     const mock = new MockMessaging();
-    const dispatcher = new BotDispatcher(mock);
+    const dispatcher = new BotDispatcher(mock, bridge, 'google');
     await dispatcher.init();
 
     // Clear existing sandboxes from DB for a clean test

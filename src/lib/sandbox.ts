@@ -1,7 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import db from './db.ts';
 import { provisionSession } from './provision.ts';
-import { createSessionUser, deleteSessionUser } from './user.ts';
+import {
+  createSessionUser,
+  deleteSessionUser,
+  getSandboxPort,
+  getSessionUsername,
+  userExists,
+} from './user.ts';
 
 export interface Sandbox {
   id: string;
@@ -10,10 +16,21 @@ export interface Sandbox {
   status: 'active' | 'archived';
 }
 
+/**
+ * Checks if the sandbox is still alive on the host (i.e., the macOS user exists).
+ */
+export async function isSandboxAlive(id: string): Promise<boolean> {
+  if (process.env.SKIP_PROVISION) return true;
+  const instanceName = id.split('-')[0] as string;
+  const username = await getSessionUsername(instanceName);
+  return userExists(username);
+}
+
 export async function createSandbox(name?: string): Promise<Sandbox> {
   const id = uuidv4();
   // We use the first part of the UUID as the instance name
   const instanceName = id.split('-')[0] as string;
+  const apiPort = getSandboxPort(instanceName);
 
   const sandbox: Sandbox = {
     id,
@@ -24,7 +41,7 @@ export async function createSandbox(name?: string): Promise<Sandbox> {
 
   if (!process.env.SKIP_PROVISION) {
     await createSessionUser(instanceName);
-    await provisionSession(instanceName);
+    await provisionSession(instanceName, undefined, undefined, apiPort);
   } else {
     console.log(`[Mock] Skipping provisioning for ${instanceName}`);
   }

@@ -13,39 +13,39 @@ export interface ZulipConfig {
   defaultStream: string;
 }
 
+interface ZulipEvent {
+  id: number;
+  type: string;
+  message?: {
+    type: string;
+    sender_email: string;
+    sender_full_name: string;
+    content: string;
+    display_recipient: string;
+    subject: string;
+    id: number;
+  };
+}
+
+interface ZulipClient {
+  queues: {
+    register(params: { event_types: string[] }): Promise<{
+      queue_id: string;
+      last_event_id: number;
+    }>;
+  };
+  events: {
+    retrieve(params: {
+      queue_id: string | null;
+      last_event_id: number;
+      dont_block: boolean;
+    }): Promise<{ events: ZulipEvent[] }>;
+  };
+}
+
 export class ZulipMessaging implements MessagingPlatform {
   readonly name = 'zulip';
-  private client: {
-    messages: {
-      send: (params: { type: string; to: string; topic: string; content: string }) => Promise<void>;
-    };
-    queues: {
-      register: (params: { event_types: string[] }) => Promise<{
-        queue_id: string;
-        last_event_id: number;
-      }>;
-    };
-    events: {
-      retrieve: (params: {
-        queue_id: string | null;
-        last_event_id: number;
-        dont_block: boolean;
-      }) => Promise<{
-        events: {
-          id: number;
-          type: string;
-          message?: {
-            type: string;
-            sender_email: string;
-            display_recipient: string;
-            subject: string;
-            content: string;
-            sender_full_name: string;
-          };
-        }[];
-      }>;
-    };
-  } | null = null;
+  private client: ZulipClient | null = null;
   private messageHandlers: MessageHandler[] = [];
   private deleteHandlers: ChannelDeleteHandler[] = [];
   private config: ZulipConfig;
@@ -70,23 +70,102 @@ export class ZulipMessaging implements MessagingPlatform {
   }
 
   async sendMessage(channelId: string, content: string): Promise<void> {
-    if (!this.client) throw new Error('Zulip client not connected');
-    // channelId for Zulip will be "stream:topic"
     const [stream, topic] = this.parseChannelId(channelId);
 
-    await this.client.messages.send({
-      type: 'stream',
-      to: stream,
-      topic: topic,
-      content: content,
+    console.log(
+      `[Zulip] Sending message to ${stream} > ${topic}: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`,
+    );
+
+    const auth = Buffer.from(`${this.config.username}:${this.config.apiKey}`).toString('base64');
+    const params = new URLSearchParams();
+    params.append('type', 'stream');
+    params.append('to', stream);
+    params.append('topic', topic);
+    params.append('content', content);
+
+    const response = await fetch(`${this.config.site}/api/v1/messages`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: params.toString(),
     });
+
+    const result = (await response.json()) as { result: string; msg?: string };
+    if (result.result !== 'success') {
+      console.error(`[Zulip] Failed to send message: ${result.msg}`);
+      throw new Error(`Zulip API error: ${result.msg}`);
+    }
+  }
+
+  async addReaction(_channelId: string, messageId: string, emoji: string): Promise<void> {
+    const mid = Number.parseInt(messageId, 10);
+    if (Number.isNaN(mid)) return;
+
+    const auth = Buffer.from(`${this.config.username}:${this.config.apiKey}`).toString('base64');
+    const params = new URLSearchParams();
+    const zulipEmoji = emoji === 'working' ? 'gear' : emoji === 'thought' ? 'thinking' : emoji;
+    params.append('emoji_name', zulipEmoji);
+
+    const response = await fetch(`${this.config.site}/api/v1/messages/${mid}/reactions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: params.toString(),
+    });
+
+    const result = (await response.json()) as { result: string; msg?: string };
+    if (result.result !== 'success' && result.msg !== 'Reaction already exists') {
+      console.warn(`[Zulip] Failed to add reaction: ${result.msg}`);
+    }
   }
 
   async createChannel(name: string): Promise<string> {
-    // In Zulip, "creating" a channel just means starting a topic
-    // We use the default stream and the provided name as topic
     const topic = `sbx-${name.toLowerCase().replace(/[^a-z0-9-]/g, '-')}`;
     return `${this.config.defaultStream}:${topic}`;
+  }
+
+  async listChannels(): Promise<string[]> {
+    if (!this.client) throw new Error('Zulip client not connected');
+
+    const auth = Buffer.from(`${this.config.username}:${this.config.apiKey}`).toString('base64');
+    const headers = { Authorization: `Basic ${auth}` };
+
+    // 1. Get subscriptions (streams)
+    const subRes = await fetch(`${this.config.site}/api/v1/users/me/subscriptions`, { headers });
+    const subData = (await subRes.json()) as {
+      result: string;
+      subscriptions: { stream_id: number; name: string }[];
+    };
+
+    if (subData.result !== 'success') {
+      console.error(`[Zulip] Failed to fetch subscriptions: ${JSON.stringify(subData)}`);
+      return [];
+    }
+
+    const allChannelIds: string[] = [];
+
+    // 2. For each stream, get topics
+    for (const sub of subData.subscriptions) {
+      const topicRes = await fetch(`${this.config.site}/api/v1/users/me/${sub.stream_id}/topics`, {
+        headers,
+      });
+      const topicData = (await topicRes.json()) as {
+        result: string;
+        topics: { name: string }[];
+      };
+
+      if (topicData.result === 'success') {
+        for (const topic of topicData.topics) {
+          allChannelIds.push(`${sub.name}:${topic.name}`);
+        }
+      }
+    }
+
+    return allChannelIds;
   }
 
   onMessage(handler: MessageHandler): void {
@@ -133,15 +212,17 @@ export class ZulipMessaging implements MessagingPlatform {
           this.lastEventId = event.id;
           if (event.type === 'message' && event.message && event.message.type === 'stream') {
             const message = event.message;
-            // Ignore own messages
             if (message.sender_email === this.config.username) continue;
+
+            const cleanContent = (message.content || '').replace(/<[^>]*>?/gm, '').trim();
 
             const incoming: IncomingMessage = {
               platform: this.name,
               channelId: `${message.display_recipient}:${message.subject}`,
+              messageId: String(message.id),
               userId: message.sender_email || 'unknown',
               userName: message.sender_full_name || 'unknown',
-              content: message.content || '',
+              content: cleanContent,
               raw: event,
             };
 
@@ -149,9 +230,6 @@ export class ZulipMessaging implements MessagingPlatform {
               await handler(incoming);
             }
           }
-          // Topic deletion isn't easily captured in Zulip via events like this
-          // But we can check for other event types if needed.
-          // For now, focus on messages.
         }
       } catch (error) {
         console.error('Error in Zulip event loop:', error);

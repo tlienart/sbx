@@ -8,6 +8,7 @@ export type AgentMode = 'plan' | 'build' | 'research';
 export interface AgentState {
   mode: AgentMode;
   status: 'idle' | 'thinking' | 'writing';
+  opencodeSessionId?: string;
   lastActivity: Date;
 }
 
@@ -36,13 +37,14 @@ export async function startAgent(sandboxId: string, mode: AgentMode = 'plan') {
 
 export function getAgentState(sandboxId: string): AgentState | undefined {
   const row = db.prepare('SELECT * FROM agent_states WHERE sandbox_id = ?').get(sandboxId) as
-    | { mode: string; status: string; last_activity: string }
+    | { mode: string; status: string; opencode_session_id: string | null; last_activity: string }
     | undefined;
   if (!row) return undefined;
 
   return {
     mode: row.mode as AgentMode,
     status: row.status as 'idle' | 'thinking' | 'writing',
+    opencodeSessionId: row.opencode_session_id || undefined,
     lastActivity: new Date(row.last_activity),
   };
 }
@@ -55,9 +57,15 @@ export function updateAgentState(sandboxId: string, updates: Partial<AgentState>
 
   db.prepare(`
     UPDATE agent_states 
-    SET mode = ?, status = ?, last_activity = ?
+    SET mode = ?, status = ?, opencode_session_id = ?, last_activity = ?
     WHERE sandbox_id = ?
-  `).run(newState.mode, newState.status, newState.lastActivity.toISOString(), sandboxId);
+  `).run(
+    newState.mode,
+    newState.status,
+    newState.opencodeSessionId || null,
+    newState.lastActivity.toISOString(),
+    sandboxId,
+  );
 }
 
 export async function interruptAgent(sandboxId: string): Promise<void> {
@@ -89,6 +97,9 @@ export async function resetAgentSession(sandboxId: string): Promise<void> {
   console.log(`Resetting agent session in sandbox ${sandboxId}...`);
   const instanceName = sandboxId.split('-')[0] as string;
   const username = await getSessionUsername(instanceName);
+
+  // Clear session ID from DB
+  updateAgentState(sandboxId, { opencodeSessionId: undefined });
 
   if (process.env.SKIP_PROVISION) {
     console.log(`[Mock] Skipping session reset for ${username}`);
