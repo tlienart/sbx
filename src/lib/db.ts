@@ -10,6 +10,9 @@ if (!existsSync(DB_DIR)) {
 const dbPath = join(DB_DIR, 'sbx.db');
 const db = new Database(dbPath);
 
+// Enable foreign keys
+db.run('PRAGMA foreign_keys = ON;');
+
 // Initialize schema
 db.run(`
   CREATE TABLE IF NOT EXISTS sandboxes (

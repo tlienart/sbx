@@ -13,7 +13,7 @@ import { runAsUser, sudoRun } from '../exec.ts';
 import { splitMessage } from '../formatting.ts';
 import type { IncomingMessage, MessagingPlatform } from '../messaging/types.ts';
 import { deployOpenCodeConfig } from '../provision.ts';
-import { createSandbox, removeSandbox } from '../sandbox.ts';
+import { createSandbox, isSandboxAlive, removeSandbox } from '../sandbox.ts';
 import { getSandboxPort, getSessionUsername } from '../user.ts';
 
 export class BotDispatcher {
@@ -99,10 +99,42 @@ export class BotDispatcher {
     }
 
     // Regular message - relay to sandbox agent
-    const sandboxId = sessionRepo.getSandboxId(msg.platform, msg.channelId);
+    let sandboxId = sessionRepo.getSandboxId(msg.platform, msg.channelId);
     if (!sandboxId) {
       // Not in a sandbox channel, ignore or notify
       return;
+    }
+
+    // Check if sandbox is still alive
+    if (!(await isSandboxAlive(sandboxId))) {
+      await this.platform.sendMessage(
+        msg.channelId,
+        '⚠️ This sandbox was wiped from the host. Recreating a fresh one...',
+      );
+
+      // Clean up stale sandbox (if any DB record remains)
+      await removeSandbox(sandboxId);
+
+      // Recreate using the topic name as title if possible
+      const topicName = msg.channelId.split(':')[1] || 'recovered';
+      const newSandbox = await createSandbox(topicName);
+      sandboxId = newSandbox.id;
+
+      // Map existing channel to new sandbox
+      sessionRepo.saveSession(msg.platform, msg.channelId, sandboxId);
+
+      // Provision toolchain and bridge (matching cmdNew logic)
+      const instanceName = sandboxId.split('-')[0] as string;
+      const username = await getSessionUsername(instanceName);
+      const apiPort = getSandboxPort(instanceName);
+
+      await startAgent(sandboxId, 'plan');
+      await this.bridge.attachToSandbox(username, apiPort);
+
+      await this.platform.sendMessage(
+        msg.channelId,
+        `✅ Sandbox recovered (ID: \`${sandboxId}\`). Mode: **plan**.`,
+      );
     }
 
     await this.relayToAgent(sandboxId, msg);
@@ -193,6 +225,14 @@ export class BotDispatcher {
       await this.platform.sendMessage(
         msg.channelId,
         '✅ SBX Bot is operational. (Not in a sandbox channel)',
+      );
+      return;
+    }
+
+    if (!(await isSandboxAlive(sandboxId))) {
+      await this.platform.sendMessage(
+        msg.channelId,
+        '⚠️ This sandbox is unavailable (missing from host). Send any message to recover it.',
       );
       return;
     }

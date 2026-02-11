@@ -1,31 +1,31 @@
-# Plan: Test Suite Cleanup and Linting Fixes [DONE]
+# Plan - Fix Orpaned Zulip Sessions Recovery
 
-This plan aimed to resolve the "Step 6 after Step 7" naming inconsistency in the test suite and fix the remaining `any` usage lint errors to make `make lint` pass.
+The SBX bot should gracefully handle cases where a sandbox's macOS user has been deleted (e.g., after `make clean`) but the database still tracks the session. 
 
-## 1. Test Suite Renaming & Cleanup [DONE]
-Ensure the sandbox test sequence is logical and correctly numbered.
+## Current Implementation (Self-Healing)
 
-- [x] **Rename Stage Scripts**:
-    - Renamed `scripts/stage7-bridge-git.ts` -> `scripts/stage6-bridge-git.ts`.
-    - Renamed `scripts/stage6-cleanup.ts` -> `scripts/stage7-cleanup.ts`.
-- [x] **Update `package.json`**:
-    - Updated the `test:sandbox` script to use the new filenames in the correct order:
-      `stage1 -> stage2 -> stage3 -> stage4 -> stage5 -> stage6 (git bridge) -> stage7 (cleanup)`.
-- [x] **Update Script Internals**:
-    - Updated the `console.log` headers and function names in both scripts to reflect their new stage numbers.
+### 1. `src/lib/sandbox.ts` [x]
+- Added `isSandboxAlive(id: string): Promise<boolean>` to check if the underlying macOS user exists.
 
-## 2. Fix Lint Errors (`noExplicitAny`) [DONE]
-Address the 4 remaining `any` usage errors detected by Biome.
+### 2. `src/lib/bot/dispatcher.ts` [x]
+- **Reactive Recovery**: `handleMessage` now checks `isSandboxAlive(sandboxId)`.
+    - If a sandbox is missing from the host, the bot notifies the user and automatically recreates a fresh sandbox identity, provisions the toolchain, and re-attaches the bridge.
+- **Smart Reconciliation**: `reconcileSessions` only prunes sandboxes if their Zulip topic/channel has been deleted. It **no longer** prunes sandboxes just because the host user is missing (avoiding data loss during host wipes).
+- **Status Reporting**: `/status` now identifies "Orphaned" sandboxes and invites recovery.
 
-- [x] **`scripts/verify-zulip-transport.ts`**:
-    - Defined a `MockRequest` interface for `lastRequest`.
-    - Updated catch block to use `err: unknown` with `instanceof Error` checks.
-- [x] **`src/lib/messaging/zulip.ts`**:
-    - Defined a `ZulipEvent` and `ZulipClient` interface.
-    - Replaced `client: any` with the proper interfaces.
-- [x] **`src/lib/bot/dispatcher.ts`**:
-    - Replaced `heartbeatInterval: any` with `ReturnType<typeof setInterval> | undefined`.
+### 3. `src/lib/db.ts` [x]
+- Enabled SQLite Foreign Keys (`PRAGMA foreign_keys = ON`) to ensure metadata is cleaned up when a sandbox is explicitly removed.
 
-## 3. Verification [DONE]
-- [x] Run `make lint` to ensure it passes.
-- [x] Run `make test_sandbox` (verified sequence in `package.json`).
+## Verification
+
+### Mock Test [x]
+- Verified via `scripts/test-recovery.ts` that:
+    1. A message to a missing sandbox triggers notification and recreation.
+    2. A bot restart does NOT wipe existing session mappings even if users are missing.
+
+### Manual Verification Cycle
+1. Create a sandbox: `/new demo-fix`.
+2. Send a message to verify.
+3. Stop bot and run `make clean`.
+4. Start bot and send another message in the same topic.
+5. **Expected**: Bot notifies about recovery and continues the session in a new identity.

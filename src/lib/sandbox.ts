@@ -1,13 +1,28 @@
 import { v4 as uuidv4 } from 'uuid';
 import db from './db.ts';
 import { provisionSession } from './provision.ts';
-import { createSessionUser, deleteSessionUser, getSandboxPort } from './user.ts';
+import {
+  createSessionUser,
+  deleteSessionUser,
+  getSandboxPort,
+  getSessionUsername,
+  userExists,
+} from './user.ts';
 
 export interface Sandbox {
   id: string;
   name?: string;
   createdAt: Date;
   status: 'active' | 'archived';
+}
+
+/**
+ * Checks if the sandbox is still alive on the host (i.e., the macOS user exists).
+ */
+export async function isSandboxAlive(id: string): Promise<boolean> {
+  const instanceName = id.split('-')[0] as string;
+  const username = await getSessionUsername(instanceName);
+  return userExists(username);
 }
 
 export async function createSandbox(name?: string): Promise<Sandbox> {
