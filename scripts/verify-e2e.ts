@@ -1,36 +1,31 @@
 import chalk from 'chalk';
-import { ensureSudo, run, runAsUser } from '../src/lib/exec.ts';
+import { getOS } from '../src/lib/common/os/index.ts';
+import { getIdentity } from '../src/lib/identity/index.ts';
 import { logger } from '../src/lib/logger.ts';
-import { provisionSession } from '../src/lib/provision.ts';
-import { sudoers } from '../src/lib/sudo.ts';
-import {
-  createSessionUser,
-  deleteSessionUser,
-  getHostUser,
-  isUserActive,
-} from '../src/lib/user.ts';
+import { Provisioner } from '../src/lib/provision/index.ts';
 
 async function runE2E() {
   const testInstances = ['e2e-test-1', 'e2e-test-2'];
+  const os = getOS();
+  const identity = getIdentity();
+  const provisioner = new Provisioner(identity.users);
 
   console.log(chalk.bold.cyan('🧪 Starting Sbx E2E Test Suite\n'));
 
   // Sudo heartbeat to keep the session alive
   const heartbeat = setInterval(async () => {
     try {
-      await run('sudo', ['-v']);
+      await os.proc.run('sudo', ['-v']);
     } catch {
       /* ignore */
     }
   }, 45000);
 
   try {
-    await ensureSudo();
-
     // 1. Cleanup existing tests (including any orphaned by prefix)
     console.log(chalk.blue('🧹 Phase 1: Cleaning up existing test instances...'));
-    const hostUser = await getHostUser();
-    const { stdout: allUsers } = await run('dscl', ['.', '-list', '/Users']);
+    const hostUser = await identity.users.getHostUser();
+    const { stdout: allUsers } = await os.proc.run('dscl', ['.', '-list', '/Users']);
     const orphans = allUsers.split('\n').filter((u) => u.startsWith(`sbx_${hostUser}_e2e-test-`));
 
     for (const username of orphans) {
@@ -38,8 +33,7 @@ async function runE2E() {
       const inst = parts[parts.length - 1];
       if (!inst) continue;
       logger.info(`Cleaning up orphan: ${username}`);
-      await sudoers.remove(inst);
-      await deleteSessionUser(inst);
+      await identity.cleanupSessionUser(inst);
     }
 
     // 2. Sequential Creation (to avoid multiple overlapping TCC prompts)
@@ -48,13 +42,13 @@ async function runE2E() {
       console.log(chalk.gray(`--- Processing: ${inst} ---`));
 
       logger.info(`Creating ${inst}...`);
-      await createSessionUser(inst);
+      await identity.setupSessionUser(inst);
 
       logger.info(`Provisioning ${inst} with default tools (gh, jq, uv, python, bun)...`);
-      await provisionSession(inst);
+      await provisioner.provisionSession(inst);
 
-      const username = `sbx_${hostUser}_${inst}`;
-      const active = await isUserActive(username);
+      const username = await identity.users.getSessionUsername(inst);
+      const active = await identity.users.isUserActive(username);
       if (!active) throw new Error(`${username} is not active after provisioning.`);
       logger.success(`${inst} is active and provisioned.`);
     }
@@ -62,10 +56,10 @@ async function runE2E() {
     // 3. Validation & Sandbox Audit
     console.log(chalk.blue('\n🔍 Phase 3: Validating session access, tools, and sandboxing...'));
     for (const inst of testInstances) {
-      const username = `sbx_${hostUser}_${inst}`;
+      const username = await identity.users.getSessionUsername(inst);
       logger.info(`Testing access for ${username}...`);
 
-      const check = await runAsUser(
+      const check = await os.proc.runAsUser(
         username,
         'zsh -l -c "gh --version && jq --version && uv --version && python3 --version && bun --version"',
       );
@@ -83,7 +77,7 @@ async function runE2E() {
       // 1. Filesystem Isolation (Cannot read host user's home)
       const hostHome = `/Users/${hostUser}`;
       try {
-        await runAsUser(username, `ls ${hostHome}`);
+        await os.proc.runAsUser(username, `ls ${hostHome}`);
         throw new Error(`SANDBOX LEAK: User ${username} could read ${hostHome}`);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -96,7 +90,7 @@ async function runE2E() {
 
       // 2. Privilege Isolation (Cannot run sudo)
       try {
-        await runAsUser(username, 'sudo -n true');
+        await os.proc.runAsUser(username, 'sudo -n true');
         throw new Error(`SANDBOX LEAK: User ${username} could execute sudo.`);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -112,7 +106,7 @@ async function runE2E() {
 
       // git --exec-path should be blocked
       try {
-        await runAsUser(username, 'git --exec-path');
+        await os.proc.runAsUser(username, 'git --exec-path');
         throw new Error(`BRIDGE LEAK: git --exec-path was allowed in ${inst}`);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -125,7 +119,7 @@ async function runE2E() {
 
       // gh extension list should be blocked
       try {
-        await runAsUser(username, 'gh extension list');
+        await os.proc.runAsUser(username, 'gh extension list');
         throw new Error(`BRIDGE LEAK: gh extension was allowed in ${inst}`);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -137,7 +131,7 @@ async function runE2E() {
       }
 
       // 4. Home Directory Permissions (Must be 700)
-      const { stdout: permOut } = await run('stat', ['-f', '%A', `/Users/${username}`]);
+      const { stdout: permOut } = await os.proc.run('stat', ['-f', '%A', `/Users/${username}`]);
       if (permOut.trim() !== '700') {
         throw new Error(
           `PERMISSIONS LEAK: /Users/${username} has permissions ${permOut.trim()}, expected 700`,
@@ -148,9 +142,9 @@ async function runE2E() {
       // 5. Cross-Sandbox Isolation
       for (const otherInst of testInstances) {
         if (inst === otherInst) continue;
-        const otherUsername = `sbx_${hostUser}_${otherInst}`;
+        const otherUsername = await identity.users.getSessionUsername(otherInst);
         try {
-          await runAsUser(username, `ls /Users/${otherUsername}`);
+          await os.proc.runAsUser(username, `ls /Users/${otherUsername}`);
           throw new Error(`SANDBOX LEAK: User ${username} could read /Users/${otherUsername}`);
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
@@ -164,7 +158,7 @@ async function runE2E() {
 
       // 6. Host Access (ACL Check) - Host should still be able to see files
       try {
-        await run('ls', [`/Users/${username}`]);
+        await os.proc.run('ls', [`/Users/${username}`]);
         logger.success(`Sandbox Audit [ACL]: Host can still access ${username} home.`);
       } catch (err: unknown) {
         throw new Error(`ACL FAILURE: Host cannot access /Users/${username}: ${err}`);
@@ -174,8 +168,7 @@ async function runE2E() {
     // 4. Cleanup
     console.log(chalk.blue('\n🧹 Phase 4: Final Cleanup...'));
     for (const inst of testInstances) {
-      await sudoers.remove(inst);
-      await deleteSessionUser(inst);
+      await identity.cleanupSessionUser(inst);
       logger.info(`Deleted ${inst}`);
     }
 

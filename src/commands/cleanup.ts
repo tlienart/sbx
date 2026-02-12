@@ -1,12 +1,13 @@
 import { execSync } from 'node:child_process';
 import { existsSync, readdirSync, rmSync } from 'node:fs';
+import { getIdentity } from '../lib/identity/index.ts';
 import { logger } from '../lib/logger.ts';
-import { getHostUser } from '../lib/user.ts';
 
 export async function cleanupCommand() {
   logger.info('Performing deep cleanup of SBX artifacts...');
 
   try {
+    const identity = getIdentity();
     // 1. Kill all bridge processes
     logger.info('Terminating all bridge processes...');
     try {
@@ -16,7 +17,7 @@ export async function cleanupCommand() {
     }
 
     // 2. Remove bridge sockets (host side)
-    const hostUser = await getHostUser();
+    const hostUser = await identity.users.getHostUser();
     const bridgeDir = `/tmp/.sbx_${hostUser}`;
     if (existsSync(bridgeDir)) {
       logger.info(`Removing host bridge directory: ${bridgeDir}`);

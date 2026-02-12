@@ -1,17 +1,10 @@
-import { execSync } from 'node:child_process';
 import { serve } from 'bun';
-import { SbxBridge } from '../lib/bridge.ts';
-import { ensureSudo, runAsUser } from '../lib/exec.ts';
+import { BridgeBox } from '../lib/bridge/index.ts';
+import { getOS } from '../lib/common/os/index.ts';
+import { getSandboxPort } from '../lib/common/utils/port.ts';
+import { getIdentity } from '../lib/identity/index.ts';
 import { logger } from '../lib/logger.ts';
-import { provisionSession } from '../lib/provision.ts';
-import {
-  createSessionUser,
-  getHostUser,
-  getSandboxPort,
-  getSessionUsername,
-  isUserActive,
-  listSessions,
-} from '../lib/user.ts';
+import { getSandboxManager } from '../lib/sandbox/index.ts';
 
 interface ServeOptions {
   port: string;
@@ -19,16 +12,18 @@ interface ServeOptions {
 
 export async function serveCommand(options: ServeOptions) {
   const port = Number.parseInt(options.port, 10);
-  const hostUser = await getHostUser();
-  const bridge = new SbxBridge(hostUser);
+  const os = getOS();
+  const sandboxManager = getSandboxManager();
+  const identity = getIdentity().users;
+  const hostUser = await identity.getHostUser();
+  const bridge = new BridgeBox(hostUser);
   const isMock = process.env.SBX_MOCK === '1';
-  const provisionedInstances = new Set<string>();
 
   logger.info(`Starting SBX API server on port ${port}${isMock ? ' (MOCK MODE)' : ''}...`);
 
   try {
     if (!isMock) {
-      await ensureSudo();
+      await os.proc.ensureSudo();
     }
     await bridge.start();
     logger.success('Host bridge started.');
@@ -45,21 +40,26 @@ export async function serveCommand(options: ServeOptions) {
 
       // --- /status ---
       if (req.method === 'GET' && url.pathname === '/status') {
-        const sessions = await listSessions();
+        const sandboxes = await sandboxManager.listSandboxes();
         const results = await Promise.all(
-          sessions.map(async (s) => {
-            const port = getSandboxPort(s.instanceName);
+          sandboxes.map(async (s) => {
+            const instanceName = s.id.split('-')[0] as string;
+            const username = await identity.getSessionUsername(instanceName);
+            const apiPort = getSandboxPort(instanceName);
             let bridgeActive = false;
             try {
-              const check = await runAsUser(s.username, `nc -z 127.0.0.1 ${port}`);
+              const check = await os.proc.runAsUser(username, `nc -z 127.0.0.1 ${apiPort}`, {
+                timeoutMs: 1000,
+              });
               bridgeActive = check.exitCode === 0;
             } catch {
               /* ignore */
             }
             return {
-              instance: s.instanceName,
-              username: s.username,
-              bridgePort: port,
+              instance: instanceName,
+              id: s.id,
+              username,
+              bridgePort: apiPort,
               bridgeActive,
             };
           }),
@@ -77,27 +77,23 @@ export async function serveCommand(options: ServeOptions) {
           };
           const { instance, tools, provider = 'google' } = body;
 
-          if (!instance) {
-            return Response.json({ error: 'Missing instance name' }, { status: 400 });
-          }
+          logger.info(`[API] Creating session: ${instance || 'unnamed'}`);
 
-          const username = await getSessionUsername(instance);
-          const apiPort = getSandboxPort(instance);
-
-          logger.info(`[API] Creating session: ${instance}`);
+          const sandbox = await sandboxManager.createSandbox(instance, tools, provider);
+          const instanceName = sandbox.id.split('-')[0] as string;
+          const username = await identity.getSessionUsername(instanceName);
+          const apiPort = getSandboxPort(instanceName);
 
           if (!isMock) {
-            if (!(await isUserActive(username))) {
-              await createSessionUser(instance);
-            }
-            if (!provisionedInstances.has(instance)) {
-              await provisionSession(instance, tools, provider, apiPort);
-              provisionedInstances.add(instance);
-            }
             await bridge.attachToSandbox(username, apiPort);
           }
 
-          return Response.json({ status: 'created', instance, username });
+          return Response.json({
+            status: 'created',
+            instance: instanceName,
+            id: sandbox.id,
+            username,
+          });
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : String(err);
           logger.error(`[API] Error creating session: ${msg}`);
@@ -115,21 +111,27 @@ export async function serveCommand(options: ServeOptions) {
             return Response.json({ error: 'Missing instance or command' }, { status: 400 });
           }
 
-          const username = await getSessionUsername(instance);
-          const apiPort = getSandboxPort(instance);
+          const sandboxes = await sandboxManager.listSandboxes();
+          const sandbox = sandboxes.find(
+            (s) => s.id === instance || s.id.startsWith(instance) || s.name === instance,
+          );
+
+          if (!sandbox) {
+            return Response.json({ error: `Sandbox not found: ${instance}` }, { status: 404 });
+          }
+
+          const instanceName = sandbox.id.split('-')[0] as string;
+          const username = await identity.getSessionUsername(instanceName);
+          const apiPort = getSandboxPort(instanceName);
 
           if (!isMock) {
-            if (!(await isUserActive(username))) {
-              await createSessionUser(instance);
-            }
-            if (!provisionedInstances.has(instance)) {
-              await provisionSession(instance, undefined, undefined, apiPort);
-              provisionedInstances.add(instance);
+            if (!(await sandboxManager.isSandboxAlive(sandbox.id))) {
+              await sandboxManager.createSandbox(sandbox.name, undefined, undefined);
             }
             await bridge.attachToSandbox(username, apiPort);
           }
 
-          logger.info(`[API] Executing in ${instance}: ${command}`);
+          logger.info(`[API] Executing in ${instanceName}: ${command}`);
 
           const result = isMock
             ? await (async () => {
@@ -145,7 +147,7 @@ export async function serveCommand(options: ServeOptions) {
                 });
                 return { stdout: proc.stdout, stderr: proc.stderr, exitCode: proc.exitCode ?? 0 };
               })()
-            : await runAsUser(username, command, {
+            : await os.proc.runAsUser(username, command, {
                 env: {
                   BRIDGE_SOCK: bridge.getSocketPaths().command,
                   PROXY_SOCK: bridge.getSocketPaths().proxy,
@@ -181,22 +183,28 @@ export async function serveCommand(options: ServeOptions) {
             return Response.json({ error: 'Missing instance or prompt' }, { status: 400 });
           }
 
-          const username = await getSessionUsername(instance);
-          const apiPort = getSandboxPort(instance);
+          const sandboxes = await sandboxManager.listSandboxes();
+          const sandbox = sandboxes.find(
+            (s) => s.id === instance || s.id.startsWith(instance) || s.name === instance,
+          );
+
+          if (!sandbox) {
+            return Response.json({ error: `Sandbox not found: ${instance}` }, { status: 404 });
+          }
+
+          const instanceName = sandbox.id.split('-')[0] as string;
+          const username = await identity.getSessionUsername(instanceName);
+          const apiPort = getSandboxPort(instanceName);
 
           if (!isMock) {
-            if (!(await isUserActive(username))) {
-              await createSessionUser(instance);
-            }
-            if (!provisionedInstances.has(instance)) {
-              await provisionSession(instance, undefined, provider, apiPort);
-              provisionedInstances.add(instance);
+            if (!(await sandboxManager.isSandboxAlive(sandbox.id))) {
+              await sandboxManager.createSandbox(sandbox.name, undefined, provider);
             }
             await bridge.attachToSandbox(username, apiPort);
           }
 
           logger.info(
-            `[API] OpenCode executing in ${instance} (mode: ${mode}, session: ${sessionId || 'new'}): ${prompt}`,
+            `[API] OpenCode executing in ${instanceName} (mode: ${mode}, session: ${sessionId || 'new'}): ${prompt}`,
           );
 
           let opencodeCmd = `opencode run --agent ${mode} --format json ${JSON.stringify(prompt)}`;
@@ -218,15 +226,14 @@ export async function serveCommand(options: ServeOptions) {
                 });
                 return { stdout: proc.stdout, stderr: proc.stderr, exitCode: proc.exitCode ?? 0 };
               })()
-            : await runAsUser(username, `${opencodeCmd} < /dev/null`, {
+            : await os.proc.runAsUser(username, `${opencodeCmd} < /dev/null`, {
                 env: {
                   BRIDGE_SOCK: bridge.getSocketPaths().command,
                   PROXY_SOCK: bridge.getSocketPaths().proxy,
                 },
-                timeoutMs: 60000, // 1 minute timeout
+                timeoutMs: 60000,
               });
 
-          // Parse JSON output from OpenCode
           let finalOutput = '';
           let finalSessionId = sessionId;
           const lines = result.stdout.split('\n');
@@ -239,11 +246,10 @@ export async function serveCommand(options: ServeOptions) {
                 finalOutput += json.part.text;
               }
             } catch {
-              // Not a JSON line, maybe some other output
+              /* ignore */
             }
           }
 
-          // If finalOutput is still empty (e.g. not in JSON format or error), fallback to raw stdout
           if (!finalOutput && result.stdout) {
             finalOutput = result.stdout;
           }
@@ -271,8 +277,7 @@ export async function serveCommand(options: ServeOptions) {
   const cleanup = () => {
     logger.info('Shutting down server and bridges...');
     try {
-      // Kill all api_bridge.py processes
-      execSync('pkill -f api_bridge.py || true');
+      os.proc.run('pkill', ['-f', 'api_bridge.py'], { reject: false });
     } catch {
       /* ignore */
     }

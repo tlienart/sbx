@@ -1,27 +1,21 @@
-import fs from 'node:fs';
-import {
-  type AgentMode,
-  getAgentState,
-  interruptAgent,
-  resetAgentSession,
-  startAgent,
-  updateAgentState,
-} from '../agents.ts';
-import type { SbxBridge } from '../bridge.ts';
-import db, { sessionRepo } from '../db.ts';
-import { runAsUser, sudoRun } from '../exec.ts';
+import { type AgentMode, getAgentManager } from '../agents/index.ts';
+import type { BridgeBox } from '../bridge/index.ts';
+import { getOS } from '../common/os/index.ts';
+import { getSandboxPort } from '../common/utils/port.ts';
 import { splitMessage } from '../formatting.ts';
+import { getIdentity } from '../identity/index.ts';
 import type { IncomingMessage, MessagingPlatform } from '../messaging/types.ts';
-import { deployOpenCodeConfig } from '../provision.ts';
-import { createSandbox, isSandboxAlive, removeSandbox } from '../sandbox.ts';
-import { getSandboxPort, getSessionUsername } from '../user.ts';
+import { getPersistence } from '../persistence/index.ts';
+import { Provisioner } from '../provision/index.ts';
+import { getSandboxManager } from '../sandbox/index.ts';
 
 export class BotDispatcher {
   private platform: MessagingPlatform;
-  private bridge: SbxBridge;
+  private bridge: BridgeBox;
   private provider: string;
+  private os = getOS();
 
-  constructor(platform: MessagingPlatform, bridge: SbxBridge, provider = 'google') {
+  constructor(platform: MessagingPlatform, bridge: BridgeBox, provider = 'google') {
     this.platform = platform;
     this.bridge = bridge;
     this.provider = provider;
@@ -46,14 +40,12 @@ export class BotDispatcher {
       const activeChannels = await this.platform.listChannels();
       const channelSet = new Set(activeChannels);
 
-      const activeSandboxes = db
-        .prepare("SELECT * FROM sandboxes WHERE status = 'active'")
-        .all() as {
-        id: string;
-      }[];
+      const persistence = getPersistence();
+      const activeSandboxes = persistence.sandboxes.findActive();
+      const sandboxManager = getSandboxManager();
 
       for (const sb of activeSandboxes) {
-        const sessions = sessionRepo.findBySandboxId(sb.id);
+        const sessions = persistence.sessions.findBySandboxId(sb.id);
         const platformSessions = sessions.filter((s) => s.platform === this.platform.name);
 
         for (const session of platformSessions) {
@@ -61,8 +53,8 @@ export class BotDispatcher {
             console.log(
               `[Bot] Channel ${session.external_id} no longer exists. Self-destructing sandbox ${sb.id}...`,
             );
-            await removeSandbox(sb.id);
-            sessionRepo.deleteSession(this.platform.name, session.external_id);
+            await sandboxManager.removeSandbox(sb.id);
+            persistence.sessions.deleteSession(this.platform.name, session.external_id);
           }
         }
       }
@@ -74,13 +66,11 @@ export class BotDispatcher {
 
   private async recoverSessions() {
     console.log('Recovering sessions...');
-    const activeSandboxes = db.prepare("SELECT * FROM sandboxes WHERE status = 'active'").all() as {
-      id: string;
-      name: string | null;
-    }[];
+    const persistence = getPersistence();
+    const activeSandboxes = persistence.sandboxes.findActive();
     console.log(`Found ${activeSandboxes.length} active sandboxes in database.`);
     for (const sb of activeSandboxes) {
-      const sessions = sessionRepo.findBySandboxId(sb.id);
+      const sessions = persistence.sessions.findBySandboxId(sb.id);
       console.log(`- Sandbox ${sb.id} (${sb.name || 'unnamed'}) has ${sessions.length} sessions.`);
     }
   }
@@ -99,36 +89,41 @@ export class BotDispatcher {
     }
 
     // Regular message - relay to sandbox agent
-    let sandboxId = sessionRepo.getSandboxId(msg.platform, msg.channelId);
+    const persistence = getPersistence();
+    let sandboxId = persistence.sessions.getSandboxId(msg.platform, msg.channelId);
     if (!sandboxId) {
       // Not in a sandbox channel, ignore or notify
       return;
     }
 
+    const sandboxManager = getSandboxManager();
+    const agentManager = getAgentManager();
+    const identity = getIdentity();
+
     // Check if sandbox is still alive
-    if (!(await isSandboxAlive(sandboxId))) {
+    if (!(await sandboxManager.isSandboxAlive(sandboxId))) {
       await this.platform.sendMessage(
         msg.channelId,
         '⚠️ This sandbox was wiped from the host. Recreating a fresh one...',
       );
 
       // Clean up stale sandbox (if any DB record remains)
-      await removeSandbox(sandboxId);
+      await sandboxManager.removeSandbox(sandboxId);
 
       // Recreate using the topic name as title if possible
       const topicName = msg.channelId.split(':')[1] || 'recovered';
-      const newSandbox = await createSandbox(topicName);
+      const newSandbox = await sandboxManager.createSandbox(topicName);
       sandboxId = newSandbox.id;
 
       // Map existing channel to new sandbox
-      sessionRepo.saveSession(msg.platform, msg.channelId, sandboxId);
+      persistence.sessions.saveSession(msg.platform, msg.channelId, sandboxId);
 
       // Provision toolchain and bridge (matching cmdNew logic)
       const instanceName = sandboxId.split('-')[0] as string;
-      const username = await getSessionUsername(instanceName);
+      const username = await identity.users.getSessionUsername(instanceName);
       const apiPort = getSandboxPort(instanceName);
 
-      await startAgent(sandboxId, 'plan');
+      await agentManager.startAgent(sandboxId, 'plan');
       await this.bridge.attachToSandbox(username, apiPort);
 
       await this.platform.sendMessage(
@@ -180,22 +175,27 @@ export class BotDispatcher {
     await this.platform.sendMessage(msg.channelId, `🚀 Creating new sandbox: **${title}**...`);
 
     try {
-      // Step 1: Identity
+      const sandboxManager = getSandboxManager();
+      const agentManager = getAgentManager();
+      const persistence = getPersistence();
+      const identity = getIdentity();
+
+      // Step 1: Identity & Toolchain
       await this.platform.sendMessage(msg.channelId, '👤 Creating sandbox identity...');
-      const sandbox = await createSandbox(title);
+      const sandbox = await sandboxManager.createSandbox(title);
       const instanceName = sandbox.id.split('-')[0] as string;
-      const username = await getSessionUsername(instanceName);
+      const username = await identity.users.getSessionUsername(instanceName);
 
       // Step 2: Channel/Topic
       const newChannelId = await this.platform.createChannel(title);
-      sessionRepo.saveSession(msg.platform, newChannelId, sandbox.id);
+      persistence.sessions.saveSession(msg.platform, newChannelId, sandbox.id);
 
       // Step 3: Toolchain
       await this.platform.sendMessage(
         msg.channelId,
         '📦 Provisioning toolchain (python, opencode)...',
       );
-      await startAgent(sandbox.id, 'plan');
+      await agentManager.startAgent(sandbox.id, 'plan');
 
       // Step 4: Bridge
       await this.platform.sendMessage(msg.channelId, '🔌 Attaching API bridge sidecar...');
@@ -220,7 +220,8 @@ export class BotDispatcher {
   }
 
   private async cmdStatus(msg: IncomingMessage) {
-    const sandboxId = sessionRepo.getSandboxId(msg.platform, msg.channelId);
+    const persistence = getPersistence();
+    const sandboxId = persistence.sessions.getSandboxId(msg.platform, msg.channelId);
     if (!sandboxId) {
       await this.platform.sendMessage(
         msg.channelId,
@@ -229,7 +230,10 @@ export class BotDispatcher {
       return;
     }
 
-    if (!(await isSandboxAlive(sandboxId))) {
+    const sandboxManager = getSandboxManager();
+    const agentManager = getAgentManager();
+
+    if (!(await sandboxManager.isSandboxAlive(sandboxId))) {
       await this.platform.sendMessage(
         msg.channelId,
         '⚠️ This sandbox is unavailable (missing from host). Send any message to recover it.',
@@ -237,7 +241,7 @@ export class BotDispatcher {
       return;
     }
 
-    const state = getAgentState(sandboxId);
+    const state = agentManager.getAgentState(sandboxId);
     const emoji = state?.status === 'thinking' || state?.status === 'writing' ? '⚙️' : '✅';
     const statusMsg = state ? `Status: ${state.status}, Mode: ${state.mode}` : 'Agent not started';
 
@@ -245,10 +249,12 @@ export class BotDispatcher {
   }
 
   private async cmdMode(msg: IncomingMessage) {
-    const sandboxId = sessionRepo.getSandboxId(msg.platform, msg.channelId);
+    const persistence = getPersistence();
+    const sandboxId = persistence.sessions.getSandboxId(msg.platform, msg.channelId);
     if (!sandboxId) return;
 
-    const state = getAgentState(sandboxId);
+    const agentManager = getAgentManager();
+    const state = agentManager.getAgentState(sandboxId);
     const modes: AgentMode[] = ['plan', 'build', 'research'];
     const modeList = modes
       .map((m, i) => `${i + 1}. ${m === state?.mode ? `**${m}**` : m}`)
@@ -258,7 +264,8 @@ export class BotDispatcher {
   }
 
   private async cmdSwitch(msg: IncomingMessage, args: string[]) {
-    const sandboxId = sessionRepo.getSandboxId(msg.platform, msg.channelId);
+    const persistence = getPersistence();
+    const sandboxId = persistence.sessions.getSandboxId(msg.platform, msg.channelId);
     if (!sandboxId) return;
 
     const modeInput = args[0]?.toLowerCase();
@@ -269,7 +276,8 @@ export class BotDispatcher {
     else if (modeInput === '3' || modeInput === 'research') targetMode = 'research';
 
     if (targetMode) {
-      updateAgentState(sandboxId, { mode: targetMode });
+      const agentManager = getAgentManager();
+      agentManager.updateAgentState(sandboxId, { mode: targetMode });
       await this.platform.sendMessage(msg.channelId, `🔄 Switched to mode: **${targetMode}**`);
     } else {
       await this.platform.sendMessage(
@@ -280,17 +288,20 @@ export class BotDispatcher {
   }
 
   private async cmdInterrupt(msg: IncomingMessage) {
-    const sandboxId = sessionRepo.getSandboxId(msg.platform, msg.channelId);
+    const persistence = getPersistence();
+    const sandboxId = persistence.sessions.getSandboxId(msg.platform, msg.channelId);
     if (!sandboxId) return;
 
     await this.platform.sendMessage(msg.channelId, '🛑 Interrupting current task...');
-    await interruptAgent(sandboxId);
+    const agentManager = getAgentManager();
+    await agentManager.interruptAgent(sandboxId);
 
     // Also kill sandbox processes
     try {
       const instanceName = sandboxId.split('-')[0] as string;
-      const username = await getSessionUsername(instanceName);
-      await sudoRun('pkill', ['-9', '-u', username, '-v', '-f', 'api_bridge.py']);
+      const identity = getIdentity();
+      const username = await identity.users.getSessionUsername(instanceName);
+      await this.os.proc.sudo('pkill', ['-9', '-u', username, '-v', '-f', 'api_bridge.py']);
     } catch {
       // ignore
     }
@@ -299,11 +310,13 @@ export class BotDispatcher {
   }
 
   private async cmdRestart(msg: IncomingMessage) {
-    const sandboxId = sessionRepo.getSandboxId(msg.platform, msg.channelId);
+    const persistence = getPersistence();
+    const sandboxId = persistence.sessions.getSandboxId(msg.platform, msg.channelId);
     if (!sandboxId) return;
 
     await this.platform.sendMessage(msg.channelId, '♻️ Restarting session (clearing context)...');
-    await resetAgentSession(sandboxId);
+    const agentManager = getAgentManager();
+    await agentManager.resetAgentSession(sandboxId);
     await this.platform.sendMessage(
       msg.channelId,
       '✅ Session reset. Files are preserved but history is cleared.',
@@ -311,13 +324,14 @@ export class BotDispatcher {
   }
 
   private async relayToAgent(sandboxId: string, msg: IncomingMessage) {
-    updateAgentState(sandboxId, { status: 'thinking' });
+    const agentManager = getAgentManager();
+    agentManager.updateAgentState(sandboxId, { status: 'thinking' });
 
     if (msg.messageId) {
       await this.platform.addReaction(msg.channelId, msg.messageId, 'thought');
     }
 
-    const state = getAgentState(sandboxId);
+    const state = agentManager.getAgentState(sandboxId);
     const mode = state?.mode || 'plan';
 
     // Explicit acknowledgment in the topic
@@ -326,7 +340,8 @@ export class BotDispatcher {
     console.log(`Relaying message to sandbox ${sandboxId}: ${msg.content}`);
 
     const instanceName = sandboxId.split('-')[0] as string;
-    const username = await getSessionUsername(instanceName);
+    const identity = getIdentity();
+    const username = await identity.users.getSessionUsername(instanceName);
 
     let heartbeatInterval: ReturnType<typeof setInterval> | undefined;
 
@@ -336,11 +351,14 @@ export class BotDispatcher {
 
       // Health check: sockets and port
       const socketPaths = this.bridge.getSocketPaths();
-      const socketsExist = fs.existsSync(socketPaths.command) && fs.existsSync(socketPaths.proxy);
+      const socketsExist =
+        this.os.fs.exists(socketPaths.command) && this.os.fs.exists(socketPaths.proxy);
 
       let portOpen = false;
       try {
-        const check = await runAsUser(username, `nc -z 127.0.0.1 ${apiPort}`, { timeoutMs: 2000 });
+        const check = await this.os.proc.runAsUser(username, `nc -z 127.0.0.1 ${apiPort}`, {
+          timeoutMs: 2000,
+        });
         portOpen = check.exitCode === 0;
       } catch {
         portOpen = false;
@@ -351,7 +369,8 @@ export class BotDispatcher {
           `[Bot] Bridge unhealthy for ${username} (sockets: ${socketsExist}, port: ${portOpen}). Restarting...`,
         );
         // Force correct opencode config for this sandbox/port
-        await deployOpenCodeConfig(username, this.provider, apiPort);
+        const provisioner = new Provisioner(identity.users);
+        await provisioner.deployOpenCodeConfig(username, this.provider, apiPort);
         await this.bridge.attachToSandbox(username, apiPort);
       }
     } catch (err) {
@@ -388,7 +407,7 @@ export class BotDispatcher {
           const json = JSON.parse(line);
           if (json.sessionID) {
             newSessionId = json.sessionID;
-            updateAgentState(sandboxId, { opencodeSessionId: newSessionId });
+            agentManager.updateAgentState(sandboxId, { opencodeSessionId: newSessionId });
           }
           if (json.type === 'text' && json.part?.text) {
             const text = json.part.text;
@@ -412,13 +431,13 @@ export class BotDispatcher {
         }
       };
 
-      const result = await runAsUser(username, command, {
+      const result = await this.os.proc.runAsUser(username, command, {
         env: {
           BRIDGE_SOCK: this.bridge.getSocketPaths().command,
           PROXY_SOCK: this.bridge.getSocketPaths().proxy,
         },
         timeoutMs: 900000, // Increased to 15 minutes
-        onStdout: (data) => {
+        onStdout: (data: string) => {
           lineBuffer += data;
           const lines = lineBuffer.split('\n');
           lineBuffer = lines.pop() || '';
@@ -465,24 +484,26 @@ export class BotDispatcher {
       // Robust cleanup on error/timeout: kill all processes of the sandbox user
       try {
         const instanceName = sandboxId.split('-')[0] as string;
-        const username = await getSessionUsername(instanceName);
+        const username = await identity.users.getSessionUsername(instanceName);
         console.log(`[Bot] Cleaning up sandbox processes for ${username}...`);
         // Kill everything except the API bridge
-        await sudoRun('pkill', ['-9', '-u', username, '-v', '-f', 'api_bridge.py']);
+        await this.os.proc.sudo('pkill', ['-9', '-u', username, '-v', '-f', 'api_bridge.py']);
       } catch (cleanupErr) {
         console.warn(`[Bot] Cleanup failed (likely no processes left): ${cleanupErr}`);
       }
     } finally {
-      updateAgentState(sandboxId, { status: 'idle' });
+      agentManager.updateAgentState(sandboxId, { status: 'idle' });
     }
   }
 
   private async handleChannelDeleted(channelId: string) {
-    const sandboxId = sessionRepo.getSandboxId(this.platform.name, channelId);
+    const persistence = getPersistence();
+    const sandboxId = persistence.sessions.getSandboxId(this.platform.name, channelId);
     if (sandboxId) {
       console.log(`Channel ${channelId} deleted. Wiping sandbox ${sandboxId}...`);
-      await removeSandbox(sandboxId);
-      sessionRepo.deleteSession(this.platform.name, channelId);
+      const sandboxManager = getSandboxManager();
+      await sandboxManager.removeSandbox(sandboxId);
+      persistence.sessions.deleteSession(this.platform.name, channelId);
     }
   }
 }

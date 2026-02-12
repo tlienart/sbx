@@ -1,41 +1,39 @@
-# Plan - Fix Orpaned Zulip Sessions Recovery
+# Boxing Implementation Review & E2E Validation Plan
 
-The SBX bot should gracefully handle cases where a sandbox's macOS user has been deleted (e.g., after `make clean`) but the database still tracks the session. 
+This plan outlines the steps to verify that the "boxing" refactoring (separation of concerns into Identity, Persistence, Bridge, Provisioning, Agent, and Sandbox boxes) is complete, working correctly, and covered by tests.
 
-## Current Implementation (Self-Healing)
+## 1. Quality & Environment Sanity
+- [ ] **Linting**: Run `make lint` to ensure adherence to style guidelines (Biome).
+- [ ] **Type Checking**: Run `make typecheck` to ensure no TypeScript regressions.
+- [ ] **System Check**: Run `make doctor` to verify host permissions (sudo, pkgx, etc.).
 
-### 1. `src/lib/sandbox.ts` [x]
-- Added `isSandboxAlive(id: string): Promise<boolean>` to check if the underlying macOS user exists.
+## 2. Subsystem Validation (Unit Tests)
+Verify each "Box" works in isolation using its dedicated test suite.
+- [ ] **Persistence Box**: `make test_persistence` (Repositories, SQLite schema, Foreign Keys).
+- [ ] **Identity Box**: `make test_identity` (macOS User management, Sudoers, ACLs).
+- [ ] **Bridge Box**: `make test_bridge` (CommandBridge, ApiProxy, SecretManager).
+- [ ] **Provisioning Box**: `make test_provision` (Shim deployment, pkgx configuration).
+- [ ] **Agent Box**: `make test_agents` (AgentManager, State persistence, Lifecycle).
+- [ ] **Sandbox Box**: `make test_unit_sandbox` (SandboxManager orchestration).
 
-### 2. `src/lib/bot/dispatcher.ts` [x]
-- **Reactive Recovery**: `handleMessage` now checks `isSandboxAlive(sandboxId)`.
-    - If a sandbox is missing from the host, the bot notifies the user and automatically recreates a fresh sandbox identity, provisions the toolchain, and re-attaches the bridge.
-- **Smart Reconciliation**: `reconcileSessions` only prunes sandboxes if their Zulip topic/channel has been deleted. It **no longer** prunes sandboxes just because the host user is missing (avoiding data loss during host wipes).
-- **Status Reporting**: `/status` now identifies "Orphaned" sandboxes and invites recovery.
+## 3. Integration & Live E2E Validation
+Verify the full system lifecycle and inter-box communication.
+- [ ] **Sandbox Stages**: `make test_sandbox` (Exercises the stage-by-stage creation/provisioning logic).
+- [ ] **Bot Logic**: `make test_bot` (Exercises Zulip messaging and dispatcher routing).
+- [ ] **Full E2E Suite**: `make test_e2e` (Runs `scripts/test_e2e.sh`).
+    - [ ] Verify **Identity** (Box A): `Identity check`, `TMPDIR isolation`, `Cross-sandbox isolation`.
+    - [ ] Verify **Bridge** (Box C): `GitHub auth proxy`, `Secret redaction`, `Concurrent execution`.
+    - [ ] Verify **Provisioning & Agents** (Boxes D/E): `OpenCode Explore/Build` modes.
+    - [ ] Verify **Persistence** (Box B): Sequential creation and deletion without state leakage.
 
-### 3. `src/lib/db.ts` [x]
-- Enabled SQLite Foreign Keys (`PRAGMA foreign_keys = ON`) to ensure metadata is cleaned up when a sandbox is explicitly removed.
+## 4. Architectural "Boxing" Audit
+Manual/Grep inspection to ensure no legacy bypasses remain.
+- [ ] **CLI Refactoring**: Check if `src/commands/create.ts` and others should be updated to use `getSandboxManager()` and `Provisioner` class instead of legacy `lib/provision.ts`.
+- [ ] **Legacy Cleanup**: Verify if root `lib/*.ts` files (e.g., `provision.ts`, `user.ts`) are now purely shims or can be removed.
+- [ ] **SQL Leakage**: Ensure no SQL queries exist outside of `src/lib/persistence/`.
+- [ ] **System Leakage**: Ensure no direct `dscl`/`sysadminctl` calls exist outside of `src/lib/identity/`.
 
-## Verification
-
-### Mock Test [x]
-- Verified via `scripts/test-recovery.ts` that:
-    1. A message to a missing sandbox triggers notification and recreation.
-    2. A bot restart does NOT wipe existing session mappings even if users are missing.
-
-## Regression Fix: `test-bot.ts` failure [x]
-
-The `test-bot.ts` script uses `SKIP_PROVISION=1`, which causes `isSandboxAlive` to return `false` (since no user is created), triggering an unwanted recovery cycle during tests.
-
-### 4. `src/lib/sandbox.ts` (Correction) [x]
-- Update `isSandboxAlive` to return `true` immediately if `process.env.SKIP_PROVISION` is set. This avoids "Recovery loops" in testing/mock environments.
-
-### 5. Verification [x]
-- Run `make test_bot` and ensure it passes. [x]
-
-### Manual Verification Cycle [x]
-1. Create a sandbox: `/new demo-fix`. [x]
-2. Send a message to verify. [x]
-3. Stop bot and run `make clean`. [x]
-4. Start bot and send another message in the same topic. [x]
-5. **Expected**: Bot notifies about recovery and continues the session in a new identity. [x]
+## 5. Final Report & Cleanup
+- [ ] Update `BOXING_PLAN.md` with final verification status.
+- [ ] Document any remaining technical debt or suggested next steps.
+- [ ] Final `make clean` to ensure the system is left in a pristine state.

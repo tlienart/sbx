@@ -1,11 +1,10 @@
 import chalk from 'chalk';
 import { BotDispatcher } from '../src/lib/bot/dispatcher.ts';
-import db from '../src/lib/db.ts';
+import { BridgeBox } from '../src/lib/bridge/index.ts';
 import { logger } from '../src/lib/logger.ts';
 import { MockMessaging } from '../src/lib/messaging/mock.ts';
-import { listSandboxes } from '../src/lib/sandbox.ts';
-
-import { SbxBridge } from '../src/lib/bridge.ts';
+import { getPersistence } from '../src/lib/persistence/index.ts';
+import { getSandboxManager } from '../src/lib/sandbox/index.ts';
 
 async function runBotTest() {
   console.log(chalk.bold.cyan('\n🤖 Testing Bridge Bot Logic (Isolated)\n'));
@@ -16,13 +15,16 @@ async function runBotTest() {
   try {
     // 1. Setup
     logger.info('Initializing Mock Messaging and Dispatcher...');
-    const bridge = new SbxBridge('test-host');
+    const bridge = new BridgeBox('test-host');
     const mock = new MockMessaging();
     const dispatcher = new BotDispatcher(mock, bridge, 'google');
     await dispatcher.init();
 
+    const persistence = getPersistence();
+    const sandboxManager = getSandboxManager();
+
     // Clear existing sandboxes from DB for a clean test
-    db.prepare('DELETE FROM sandboxes').run();
+    persistence.sandboxes.deleteAll();
     const mainChannel = 'main-topic';
 
     // 2. Create new sandbox
@@ -32,7 +34,7 @@ async function runBotTest() {
     // Give some time for async operations
     await new Promise((r) => setTimeout(r, 1000));
 
-    const sandboxes = await listSandboxes();
+    const sandboxes = await sandboxManager.listSandboxes();
     const firstSandbox = sandboxes[0];
     if (!firstSandbox) throw new Error('Sandbox should have been created in DB');
     logger.success('Sandbox created and session persisted.');
@@ -53,9 +55,7 @@ async function runBotTest() {
     await mock.simulateIncomingMessage(sbChannel, '/mode');
     await mock.simulateIncomingMessage(sbChannel, '/switch build');
 
-    const state = db
-      .prepare('SELECT mode FROM agent_states WHERE sandbox_id = ?')
-      .get(firstSandbox.id) as { mode: string };
+    const state = persistence.agents.findBySandboxId(firstSandbox.id);
     if (!state || state.mode !== 'build') throw new Error('Mode switch failed');
     logger.success('Commands handled correctly.');
 
@@ -69,7 +69,7 @@ async function runBotTest() {
     await mock.simulateChannelDeletion(sbChannel);
 
     await new Promise((r) => setTimeout(r, 1000));
-    const finalSandboxes = await listSandboxes();
+    const finalSandboxes = await sandboxManager.listSandboxes();
     if (finalSandboxes.length !== 0) throw new Error('Sandbox should have been wiped from DB');
     logger.success('Automatic cleanup verified.');
 

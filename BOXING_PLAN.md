@@ -62,49 +62,59 @@ We will organize the codebase into the following "boxes," each with a clear spec
 
 ## 3. Detailed Task Checklist
 
-### Phase 1: Persistence & Identity (The Foundation)
-- [ ] Create `src/lib/persistence/` and move all SQL logic into repositories.
-- [ ] Create `src/lib/identity/` and encapsulate `dscl`, `sysadminctl`, and ACL logic.
-- [ ] Introduce an `OS` abstraction to allow mocking `exec`, `fs`, etc.
+### Phase 1: Persistence & Identity (The Foundation) [COMPLETED]
+- [x] Create `src/lib/persistence/` and move all SQL logic into repositories.
+- [x] Create `src/lib/identity/` and encapsulate `dscl`, `sysadminctl`, and ACL logic.
+- [x] Introduce an `OS` abstraction to allow mocking `exec`, `fs`, etc.
 
-### Phase 2: Bridge & Proxy Refactoring
-- [ ] Split `SbxBridge` into `CommandBridge` and `ApiProxy`.
-- [ ] Create a `SecretManager` to handle `SBX_*` environment variables.
-- [ ] Extract Python shims from `provision.ts` into external files.
+### Phase 2: Bridge & Proxy Refactoring [COMPLETED]
+- [x] Split `SbxBridge` into `CommandBridge` and `ApiProxy`.
+- [x] Create a `SecretManager` to handle `SBX_*` environment variables.
+- [x] Extract Python shims from `provision.ts` into external files in `src/resources/shims/`.
+- [x] Add independent subsystem testing to `Makefile`.
 
-### Phase 3: Sandbox & Agent Orchestration
-- [ ] Refactor `SandboxManager` to use the new Identity and Persistence boxes.
-- [ ] Decouple `AgentState` management from database implementation.
-- [ ] Standardize Sandbox ID and Instance Name handling (use a value object or helper).
+### Phase 3: Sandbox & Agent Orchestration [COMPLETED]
+- [x] Refactor `SandboxManager` to use the new Identity and Persistence boxes.
+- [x] Decouple `AgentState` management from database implementation.
+- [x] Standardize Sandbox ID and Instance Name handling (use a value object or helper).
 
-### Phase 4: Bot & Dispatcher Cleanup
-- [ ] Refactor `BotDispatcher` to use a "Command Pattern" for `/new`, `/status`, etc.
-- [ ] Move session reconciliation logic into a dedicated `SessionManager`.
-- [ ] Ensure `BotDispatcher` only depends on high-level interfaces.
+### Phase 4: Bot & Dispatcher Cleanup [COMPLETED]
+- [x] Refactor `BotDispatcher` to use a "Command Pattern" for `/new`, `/status`, etc.
+- [x] Move session reconciliation logic into a dedicated `SessionManager`.
+- [x] Ensure `BotDispatcher` only depends on high-level interfaces.
 
-### Phase 5: Test Coverage
-- [ ] Add unit tests for each box using mocks for OS and Database dependencies.
-- [ ] Implement a "Dry Run" mode for provisioning to verify it without affecting the system.
+### Phase 5: Test Coverage & Unit Test Suite [COMPLETED]
+- [x] Add unit tests for each box using mocks for OS and Database dependencies.
+- [x] Implement a "Dry Run" mode for provisioning to verify it without affecting the system.
+- [x] Integrate all unit tests into a single `make test_unit` command.
 
 ---
 
-## 4. Proposed Directory Structure
+## 4. Final Status (February 2026) [COMPLETED]
 
+The SBX codebase has been successfully "boxed" into independent, testable modules. 
+
+### Key Achievements:
+1. **Full Isolation**: All 7 subsystems (Identity, Persistence, Bridge, Provisioning, Agent, Messaging, Sandbox) are now logically isolated with clean interfaces.
+2. **Comprehensive Testing**: 
+    - **Unit Tests**: 29 unit tests covering all boxes, running in <1s using the `OS` abstraction.
+    - **E2E Validation**: A full green E2E suite (`make test_e2e`) verifying the real macOS integration.
+3. **Decoupled Business Logic**: CLI commands and the Bot Dispatcher no longer touch low-level OS or SQL logic directly.
+4. **Improved UX**: Standardized `sudo` authentication and robust bridge attachment logic.
+
+### Directory Structure:
 ```text
 src/
-  bin/            # CLI entry points
   commands/       # CLI command definitions (Commander)
   lib/
-    identity/     # macOS user/ACL management
-    persistence/  # Repositories and DB schema
-    bridge/       # Command bridge and API proxy
-    provision/    # Environment setup and shim deployment
-    agents/       # Agent state and lifecycle
-    messaging/    # Messaging platform interfaces
-    sandbox/      # High-level sandbox orchestration
-    common/       # Shared types, constants, and utilities
+    identity/     # Box A: macOS user/ACL management
+    persistence/  # Box B: Repositories and DB schema
+    bridge/       # Box C: Command bridge and API proxy
+    provision/    # Box D: Environment setup and shim deployment
+    agents/       # Box E: Agent state and lifecycle
+    messaging/    # Box F: Messaging platform interfaces
+    sandbox/      # Box G: High-level sandbox orchestration
+    common/       # Shared types, OS abstraction, and utilities
   resources/
     shims/        # Python/Bash shim sources
-    templates/    # Config file templates
-  types/          # Global type definitions
 ```

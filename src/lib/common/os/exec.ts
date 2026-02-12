@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { type Options, type Result, execa } from 'execa';
-import { logger } from './logger.ts';
+import { logger } from '../../logger.ts';
 
 const LOG_DIR = '.sbx/logs';
 const TRACE_LOG = path.join(LOG_DIR, 'trace.log');
@@ -74,8 +74,12 @@ export async function ensureSudo(): Promise<void> {
   } catch {
     // Session expired or doesn't exist, try interactive
     try {
+      logger.info(
+        '🔑 Sbx requires administrative privileges. Please enter your password if prompted.',
+      );
       trace('CMD: sudo -v');
       await execa('sudo', ['-v'], { stdio: 'inherit' });
+      logger.success('Sudo authentication successful.');
     } catch (err) {
       trace(`AUTH FAILED: ${err}`);
       throw new Error('Sudo authentication failed. This tool requires sudo privileges.');

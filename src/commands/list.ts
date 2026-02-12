@@ -1,10 +1,11 @@
 import chalk from 'chalk';
+import { getIdentity } from '../lib/identity/index.ts';
 import { logger } from '../lib/logger.ts';
-import { isUserActive, listSessions } from '../lib/user.ts';
 
 export async function listCommand() {
   try {
-    const sessions = await listSessions();
+    const identity = getIdentity();
+    const sessions = await identity.users.listUsers();
 
     if (sessions.length === 0) {
       console.log(chalk.yellow('No active sbx sessions found.'));
@@ -15,7 +16,7 @@ export async function listCommand() {
     console.log(chalk.gray('----------------------------------------'));
 
     for (const session of sessions) {
-      const active = await isUserActive(session.username);
+      const active = await identity.users.isUserActive(session.username);
       const status = active ? chalk.green('● active') : chalk.red('○ inactive');
       console.log(
         `${chalk.cyan(session.instanceName.padEnd(20))} ${status} ${chalk.gray(`(${session.username})`)}`,

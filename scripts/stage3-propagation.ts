@@ -1,11 +1,13 @@
 import chalk from 'chalk';
-import { sudoRun } from '../src/lib/exec.ts';
+import { getOS } from '../src/lib/common/os/index.ts';
+import { getIdentity } from '../src/lib/identity/index.ts';
 import { logger } from '../src/lib/logger.ts';
-import { getSessionUsername, isUserActive } from '../src/lib/user.ts';
 
 async function stage3() {
   const TEST_NAME = 'stage-test';
-  const username = await getSessionUsername(TEST_NAME);
+  const identity = getIdentity();
+  const username = await identity.users.getSessionUsername(TEST_NAME);
+  const os = getOS();
 
   console.log(chalk.bold.cyan('\n🔄 Stage 3: Propagation Guarantee\n'));
 
@@ -14,12 +16,12 @@ async function stage3() {
 
     let active = false;
     for (let i = 0; i < 5; i++) {
-      if (await isUserActive(username)) {
+      if (await identity.users.isUserActive(username)) {
         active = true;
         break;
       }
       logger.warn(`User ${username} not recognized yet, flushing cache... (Attempt ${i + 1}/5)`);
-      await sudoRun('dscacheutil', ['-flushcache']);
+      await os.proc.sudo('dscacheutil', ['-flushcache']);
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 

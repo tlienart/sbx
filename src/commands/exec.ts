@@ -1,50 +1,60 @@
-import { execSync, spawn } from 'node:child_process';
-import { SbxBridge } from '../lib/bridge.ts';
-import { ensureSudo } from '../lib/exec.ts';
+import { spawn } from 'node:child_process';
+import { BridgeBox } from '../lib/bridge/index.ts';
+import { getOS } from '../lib/common/os/index.ts';
+import { getSandboxPort } from '../lib/common/utils/port.ts';
+import { getIdentity } from '../lib/identity/index.ts';
 import { logger } from '../lib/logger.ts';
-import { getHostUser, getSessionUsername, isUserActive } from '../lib/user.ts';
+import { getSandboxManager } from '../lib/sandbox/index.ts';
 
 /**
  * Executes a command in a session or drops into an interactive shell.
  */
 export async function execCommand(instance: string, args: string[]) {
-  const hostUser = await getHostUser();
-  const username = await getSessionUsername(instance);
-  const bridge = new SbxBridge(hostUser, username);
+  const os = getOS();
+  const identity = getIdentity();
+  const sandboxManager = getSandboxManager();
+
+  // Find sandbox by name or ID
+  const sandboxes = await sandboxManager.listSandboxes();
+  const sandbox = sandboxes.find(
+    (s) => s.id === instance || s.id.startsWith(instance) || s.name === instance,
+  );
+
+  if (!sandbox) {
+    logger.error(`Instance "${instance}" not found. Run "sbx list" to see available sessions.`);
+    process.exit(1);
+  }
+
+  const instanceName = sandbox.id.split('-')[0] as string;
+  const username = await identity.users.getSessionUsername(instanceName);
+  const hostUser = await identity.users.getHostUser();
+  const bridge = new BridgeBox(hostUser, username);
 
   try {
-    // Check if user is active
-    if (!(await isUserActive(username))) {
+    if (!(await sandboxManager.isSandboxAlive(sandbox.id))) {
       logger.error(
-        `Instance "${instance}" is not active or does not exist. Run "sbx create ${instance}" first.`,
+        `Instance "${instance}" is not active on this host. Send a message via bot or API to recover it.`,
       );
       process.exit(1);
     }
 
-    // Ensure sudo is warmed up
-    await ensureSudo();
-
-    // 1. Start Host Bridge
+    await os.proc.ensureSudo();
     await bridge.start();
 
-    // 2. Start API Bridge inside sandbox
-
-    // We run it as a background process owned by the session user
     logger.info('Starting API bridge in sandbox...');
+    const apiPort = getSandboxPort(instanceName);
     const sandboxLogDir = `/Users/${username}/.sbx/logs`;
-    execSync(
-      `sudo su - ${username} -c "mkdir -p ${sandboxLogDir} && nohup api_bridge.py 9999 >${sandboxLogDir}/api_bridge.log 2>&1 &"`,
+
+    await os.proc.runAsUser(
+      username,
+      `mkdir -p ${sandboxLogDir} && nohup api_bridge.py ${apiPort} >${sandboxLogDir}/api_bridge.log 2>&1 &`,
     );
 
-    // Prepare the command for su
-    // If no args, we just use su - username
-    // If args, we use su - username -c "args..."
     const suArgs = ['-', username];
     if (args.length > 0) {
       suArgs.push('-c', args.join(' '));
     }
 
-    // Use spawn with inherit for full interactivity (TTY support)
     const child = spawn('sudo', ['su', ...suArgs], {
       stdio: 'inherit',
       env: {
@@ -54,41 +64,34 @@ export async function execCommand(instance: string, args: string[]) {
       },
     });
 
+    const finish = () => {
+      bridge.stop();
+      os.proc.run('pkill', ['-u', username, '-f', 'api_bridge.py'], { sudo: true, reject: false });
+    };
+
     child.on('exit', (code) => {
-      cleanup(bridge, username);
+      finish();
       process.exit(code || 0);
     });
 
     child.on('error', (err) => {
       logger.error(`Failed to start session: ${err.message}`);
-      cleanup(bridge, username);
+      finish();
       process.exit(1);
     });
 
-    // Handle Ctrl+C etc
     process.on('SIGINT', () => {
-      cleanup(bridge, username);
+      finish();
       process.exit(0);
     });
     process.on('SIGTERM', () => {
-      cleanup(bridge, username);
+      finish();
       process.exit(0);
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error(`Execution error: ${msg}`);
-    cleanup(bridge, await getSessionUsername(instance));
-    process.exit(1);
-  }
-}
-
-function cleanup(bridge: SbxBridge, username: string) {
-  logger.debug('Cleaning up bridge and sandbox processes...');
-  try {
     bridge.stop();
-    // Kill the api_bridge.py and any leftover processes for this user
-    execSync(`sudo pkill -u ${username} -f api_bridge.py || true`);
-  } catch {
-    // ignore
+    process.exit(1);
   }
 }

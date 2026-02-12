@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import { type Subprocess, spawn } from 'bun';
-import { getHostUser } from '../lib/user.ts';
+import { getIdentity } from '../lib/identity/index.ts';
 
 let serverProcess: Subprocess;
 const PORT = 3001;
@@ -46,7 +46,7 @@ test('POST /raw-exec executes command in sandbox', async () => {
   const data = (await response.json()) as { stdout: string; exitCode: number };
 
   // In mock mode (which we are using in beforeAll), it returns the host user
-  const expectedUser = await getHostUser();
+  const expectedUser = await getIdentity().users.getHostUser();
   expect(data.stdout.trim()).toBe(expectedUser);
   expect(data.exitCode).toBe(0);
 });

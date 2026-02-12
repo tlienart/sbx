@@ -1,11 +1,9 @@
-import { execSync } from 'node:child_process';
 import chalk from 'chalk';
 import { MultiBar, Presets } from 'cli-progress';
 import pLimit from 'p-limit';
-import { ensureSudo } from '../lib/exec.ts';
+import { getOS } from '../lib/common/os/index.ts';
 import { logger } from '../lib/logger.ts';
-import { sudoers } from '../lib/sudo.ts';
-import { deleteSessionUser, getSandboxPort } from '../lib/user.ts';
+import { getSandboxManager } from '../lib/sandbox/index.ts';
 
 export async function deleteCommand(instances: string[], options: { concurrency?: string }) {
   if (instances.length === 0) {
@@ -13,8 +11,9 @@ export async function deleteCommand(instances: string[], options: { concurrency?
     process.exit(1);
   }
 
+  const os = getOS();
   // Pre-flight sudo check
-  await ensureSudo();
+  await os.proc.ensureSudo();
 
   const concurrency = Number.parseInt(options.concurrency || '4', 10);
   const limit = pLimit(concurrency);
@@ -30,24 +29,15 @@ export async function deleteCommand(instances: string[], options: { concurrency?
     Presets.shades_grey,
   );
 
+  const sandboxManager = getSandboxManager();
+
   const tasks = instances.map((instance) =>
     limit(async () => {
       const bar = multibar.create(100, 0, { instance, step: 'Deleting...' });
 
       try {
-        bar.update(10, { step: 'Stopping bridge...' });
-        const port = getSandboxPort(instance);
-        try {
-          execSync(`sudo lsof -ti:${port} | xargs sudo kill -9 || true`);
-        } catch {
-          /* ignore */
-        }
-
-        bar.update(30, { step: 'Removing sudoers...' });
-        await sudoers.remove(instance);
-
-        bar.update(60, { step: 'Deleting user...' });
-        await deleteSessionUser(instance);
+        bar.update(50, { step: 'Removing sandbox...' });
+        await sandboxManager.removeSandbox(instance);
 
         bar.update(100, { step: 'Done' });
       } catch (err: unknown) {
