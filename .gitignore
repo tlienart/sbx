@@ -30,6 +30,8 @@ package-lock.json
 tmp/
 *.bak
 archive/discobot_tmp/
+e2e-proj/
+workspace-*/
 
 # Editor Specific
 .vscode/

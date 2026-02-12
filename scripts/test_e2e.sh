@@ -63,6 +63,9 @@ cleanup() {
   # Kill any leaked bridge processes
   pkill -f api_bridge.py 2>/dev/null || true
   
+  # Cleanup local test artifacts
+  rm -rf e2e-proj
+  
   ./bin/sbx cleanup > /dev/null 2>&1
 
   if [ "$TEST_SUCCESS" = "1" ]; then

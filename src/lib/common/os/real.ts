@@ -69,7 +69,7 @@ class RealProcessRunner implements IProcessRunner {
       stdout: child.stdout as unknown as AsyncIterable<Uint8Array | string>,
       stderr: child.stderr as unknown as AsyncIterable<Uint8Array | string>,
       exited: child.then((r) => r.exitCode ?? 0),
-      kill: (signal?: string) => child.kill(signal),
+      kill: (signal?: string) => child.kill(signal as any),
     };
   }
   async ensureSudo(): Promise<void> {
