@@ -279,6 +279,15 @@ export class BotDispatcher {
       const agentManager = getAgentManager();
       agentManager.updateAgentState(sandboxId, { mode: targetMode });
       await this.platform.sendMessage(msg.channelId, `🔄 Switched to mode: **${targetMode}**`);
+
+      // Auto-trigger the agent with an "ok" message to start working in the new mode
+      const syntheticMsg: IncomingMessage = {
+        ...msg,
+        content: 'ok',
+        // Preserve original message ID so reactions work if needed,
+        // though we've already reacted to the /switch command.
+      };
+      await this.relayToAgent(sandboxId, syntheticMsg);
     } else {
       await this.platform.sendMessage(
         msg.channelId,
