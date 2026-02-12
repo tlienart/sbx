@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { createMockOS, setOS } from '../common/os/index.ts';
 import { IdentityBox } from '../identity/index.ts';
 import { PersistenceBox } from '../persistence/index.ts';
-import type { SandboxManager } from '../sandbox/types.ts';
+import type { Sandbox, SandboxManager } from '../sandbox/types.ts';
 import { AgentManager } from './AgentManager.ts';
 
 describe('AgentManager', () => {
-  let mockOs: any;
+  let mockOs: ReturnType<typeof createMockOS>;
   let persistence: PersistenceBox;
   let identity: IdentityBox;
   let sandboxManager: SandboxManager;
@@ -20,9 +20,18 @@ describe('AgentManager', () => {
 
     sandboxManager = {
       getSandbox: mock(() =>
-        Promise.resolve({ id: 'sb-1', name: 'test', createdAt: new Date(), status: 'active' }),
+        Promise.resolve({
+          id: 'sb-1',
+          name: 'test',
+          createdAt: new Date(),
+          status: 'active',
+        } as Sandbox),
       ),
-    } as any;
+      createSandbox: mock(() => Promise.resolve({} as Sandbox)),
+      listSandboxes: mock(() => Promise.resolve([])),
+      removeSandbox: mock(() => Promise.resolve()),
+      isSandboxAlive: mock(() => Promise.resolve(true)),
+    };
 
     agentManager = new AgentManager(persistence.agents, identity.users, sandboxManager);
 

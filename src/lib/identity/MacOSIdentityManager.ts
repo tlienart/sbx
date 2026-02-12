@@ -97,8 +97,9 @@ export class MacOSIdentityManager implements IIdentityManager {
         },
       );
 
-      subprocess.catch((err: any) => {
-        logger.debug(`sysadminctl subprocess ended: ${err.message}`);
+      subprocess.exited.catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.debug(`sysadminctl subprocess ended: ${msg}`);
       });
 
       // Race: Wait for the user record to appear in Directory Service

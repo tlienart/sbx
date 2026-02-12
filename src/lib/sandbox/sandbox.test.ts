@@ -5,7 +5,7 @@ import { PersistenceBox } from '../persistence/index.ts';
 import { DefaultSandboxManager } from './SandboxManager.ts';
 
 describe('SandboxManager', () => {
-  let mockOs: any;
+  let mockOs: ReturnType<typeof createMockOS>;
   let persistence: PersistenceBox;
   let identity: IdentityBox;
   let sandboxManager: DefaultSandboxManager;

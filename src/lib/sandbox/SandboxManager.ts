@@ -83,8 +83,9 @@ export class DefaultSandboxManager implements SandboxManager {
     const instanceName = id.split('-')[0] as string;
     try {
       await this.identity.cleanupSessionUser(instanceName);
-    } catch (err: any) {
-      logger.error(`Failed to cleanup session user for ${id}: ${err.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to cleanup session user for ${id}: ${msg}`);
     }
 
     // Foreign key ON DELETE CASCADE will handle sessions and agent_states in the real DB

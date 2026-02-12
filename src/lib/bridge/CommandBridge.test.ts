@@ -1,10 +1,16 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import type { Mock } from 'bun:test';
 import { createMockOS, setOS } from '../common/os/index.ts';
 import { CommandBridge } from './CommandBridge.ts';
 import { SecretManager } from './SecretManager.ts';
 
+interface MockSocket {
+  write: Mock<(data: string) => void>;
+  end: Mock<() => void>;
+}
+
 describe('CommandBridge', () => {
-  let mockOs: any;
+  let mockOs: ReturnType<typeof createMockOS>;
   let secretManager: SecretManager;
 
   beforeEach(() => {
@@ -21,6 +27,7 @@ describe('CommandBridge', () => {
 
   test('should validate git arguments correctly', () => {
     const bridge = new CommandBridge('host-user', secretManager);
+    // biome-ignore lint/suspicious/noExplicitAny: access private for testing
     const validate = (bridge as any).validateArgs.bind(bridge);
 
     expect(validate('git', ['status'])).toBeNull();
@@ -29,10 +36,10 @@ describe('CommandBridge', () => {
 
   test('should handle valid request', async () => {
     const bridge = new CommandBridge('host-user', secretManager);
-    const socket = {
+    const socket: MockSocket = {
       write: mock(() => {}),
       end: mock(() => {}),
-    } as any;
+    };
 
     const request = {
       command: 'git',
@@ -54,24 +61,26 @@ describe('CommandBridge', () => {
         },
       }),
       exited: Promise.resolve(0),
+      kill: () => {},
     }));
 
+    // biome-ignore lint/suspicious/noExplicitAny: access private for testing
     await (bridge as any).handleRequest(socket, request);
 
     expect(socket.write).toHaveBeenCalled();
     const calls = socket.write.mock.calls;
     // Expected calls: stdout data, exit code
-    expect(calls.some((c: any) => c[0].includes('stdout'))).toBe(true);
-    expect(calls.some((c: any) => c[0].includes('"code":0'))).toBe(true);
+    expect(calls.some((c) => (c[0] as string).includes('stdout'))).toBe(true);
+    expect(calls.some((c) => (c[0] as string).includes('"code":0'))).toBe(true);
     expect(socket.end).toHaveBeenCalled();
   });
 
   test('should reject invalid CWD', async () => {
     const bridge = new CommandBridge('host-user', secretManager);
-    const socket = {
+    const socket: MockSocket = {
       write: mock(() => {}),
       end: mock(() => {}),
-    } as any;
+    };
 
     const request = {
       command: 'git',
@@ -79,19 +88,25 @@ describe('CommandBridge', () => {
       cwd: '/etc',
     };
 
+    // biome-ignore lint/suspicious/noExplicitAny: access private for testing
     await (bridge as any).handleRequest(socket, request);
 
     expect(socket.write).toHaveBeenCalled();
-    expect(socket.write.mock.calls[0][0]).toContain('Invalid CWD');
+    const calls = socket.write.mock.calls;
+    if (calls.length > 0 && calls[0]) {
+      expect(calls[0][0] as string).toContain('Invalid CWD');
+    } else {
+      throw new Error('Expected socket.write to be called');
+    }
     expect(socket.end).toHaveBeenCalled();
   });
 
   test('should reject blocked commands', async () => {
     const bridge = new CommandBridge('host-user', secretManager);
-    const socket = {
+    const socket: MockSocket = {
       write: mock(() => {}),
       end: mock(() => {}),
-    } as any;
+    };
 
     const request = {
       command: 'rm',
@@ -99,10 +114,16 @@ describe('CommandBridge', () => {
       cwd: '/Users/sbx_test_inst',
     };
 
+    // biome-ignore lint/suspicious/noExplicitAny: access private for testing
     await (bridge as any).handleRequest(socket, request);
 
     expect(socket.write).toHaveBeenCalled();
-    expect(socket.write.mock.calls[0][0]).toContain('not allowed');
+    const calls = socket.write.mock.calls;
+    if (calls.length > 0 && calls[0]) {
+      expect(calls[0][0] as string).toContain('not allowed');
+    } else {
+      throw new Error('Expected socket.write to be called');
+    }
     expect(socket.end).toHaveBeenCalled();
   });
 });

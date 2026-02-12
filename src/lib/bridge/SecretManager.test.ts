@@ -3,7 +3,7 @@ import { createMockOS, setOS } from '../common/os/index.ts';
 import { SecretManager } from './SecretManager.ts';
 
 describe('SecretManager', () => {
-  let mockOs: any;
+  let mockOs: ReturnType<typeof createMockOS>;
 
   beforeEach(() => {
     mockOs = createMockOS();

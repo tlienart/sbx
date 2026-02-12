@@ -4,7 +4,7 @@ import { ApiProxy } from './ApiProxy.ts';
 import { SecretManager } from './SecretManager.ts';
 
 describe('ApiProxy', () => {
-  let mockOs: any;
+  let mockOs: ReturnType<typeof createMockOS>;
   let secretManager: SecretManager;
 
   beforeEach(() => {

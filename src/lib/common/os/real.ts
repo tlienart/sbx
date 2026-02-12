@@ -1,5 +1,15 @@
 import fs from 'node:fs';
-import type { IEnv, IFileSystem, IOS, IProcessResult, IProcessRunner } from './interface.ts';
+import { execa } from 'execa';
+import { ensureSudo, run, runAsUser, sudoRun } from './exec.ts';
+import type {
+  ExecOptions,
+  IEnv,
+  IFileSystem,
+  IOS,
+  IProcessResult,
+  IProcessRunner,
+  ISubprocess,
+} from './interface.ts';
 
 class RealFileSystem implements IFileSystem {
   exists(path: string): boolean {
@@ -35,24 +45,32 @@ class RealEnv implements IEnv {
   }
 }
 
-import { execa } from 'execa';
-import { ensureSudo, run, runAsUser, sudoRun } from './exec.ts';
-
 class RealProcessRunner implements IProcessRunner {
-  async run(file: string, args: string[], options?: any): Promise<IProcessResult> {
+  async run(file: string, args: string[], options?: ExecOptions): Promise<IProcessResult> {
     if (options?.sudo) {
       return this.sudo(file, args, options);
     }
     return run(file, args, options);
   }
-  async sudo(file: string, args: string[], options?: any): Promise<IProcessResult> {
+  async sudo(file: string, args: string[], options?: ExecOptions): Promise<IProcessResult> {
     return sudoRun(file, args, options);
   }
-  async runAsUser(username: string, command: string, options?: any): Promise<IProcessResult> {
+  async runAsUser(
+    username: string,
+    command: string,
+    options?: ExecOptions,
+  ): Promise<IProcessResult> {
     return runAsUser(username, command, options);
   }
-  spawn(file: string, args: string[], options?: any): any {
-    return execa(file, args, options);
+  spawn(file: string, args: string[], options?: ExecOptions): ISubprocess {
+    const child = execa(file, args, options);
+    return {
+      pid: child.pid,
+      stdout: child.stdout as unknown as AsyncIterable<Uint8Array | string>,
+      stderr: child.stderr as unknown as AsyncIterable<Uint8Array | string>,
+      exited: child.then((r) => r.exitCode ?? 0),
+      kill: (signal?: string) => child.kill(signal),
+    };
   }
   async ensureSudo(): Promise<void> {
     return ensureSudo();

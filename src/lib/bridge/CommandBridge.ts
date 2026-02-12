@@ -150,8 +150,12 @@ export class CommandBridge {
         stderr: 'pipe',
       });
 
-      const stdoutReader = this.streamToSocket(proc.stdout, socket, 'stdout');
-      const stderrReader = this.streamToSocket(proc.stderr, socket, 'stderr');
+      const stdoutReader = proc.stdout
+        ? this.streamToSocket(proc.stdout, socket, 'stdout')
+        : Promise.resolve();
+      const stderrReader = proc.stderr
+        ? this.streamToSocket(proc.stderr, socket, 'stderr')
+        : Promise.resolve();
       const exitCode = await proc.exited;
       await Promise.all([stdoutReader, stderrReader]);
 
@@ -180,7 +184,7 @@ export class CommandBridge {
   }
 
   private async streamToSocket(
-    stream: any, // Supports both Node and Web streams
+    stream: AsyncIterable<Uint8Array | string>,
     socket: Socket<unknown>,
     type: 'stdout' | 'stderr',
   ) {

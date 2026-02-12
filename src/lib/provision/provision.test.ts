@@ -5,7 +5,7 @@ import { MacOSIdentityManager } from '../identity/MacOSIdentityManager.ts';
 import { Provisioner } from './index.ts';
 
 describe('Provisioner', () => {
-  let mockOs: any;
+  let mockOs: ReturnType<typeof createMockOS>;
   let identity: MacOSIdentityManager;
   let provisioner: Provisioner;
 

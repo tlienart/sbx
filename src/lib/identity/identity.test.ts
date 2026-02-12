@@ -4,7 +4,7 @@ import { IdentityBox } from './index.ts';
 
 describe('Identity Box', () => {
   let identity: IdentityBox;
-  let mockOs: any;
+  let mockOs: ReturnType<typeof createMockOS>;
 
   beforeEach(() => {
     mockOs = createMockOS();

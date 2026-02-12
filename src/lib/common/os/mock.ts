@@ -1,6 +1,14 @@
-import type { IEnv, IFileSystem, IOS, IProcessResult, IProcessRunner } from './interface.ts';
+import type {
+  ExecOptions,
+  IEnv,
+  IFileSystem,
+  IOS,
+  IProcessResult,
+  IProcessRunner,
+  ISubprocess,
+} from './interface.ts';
 
-class MockFileSystem implements IFileSystem {
+export class MockFileSystem implements IFileSystem {
   private files: Map<string, string> = new Map();
   private dirs: Set<string> = new Set();
 
@@ -31,7 +39,7 @@ class MockFileSystem implements IFileSystem {
   }
 }
 
-class MockEnv implements IEnv {
+export class MockEnv implements IEnv {
   private vars: Map<string, string> = new Map();
   get(key: string): string | undefined {
     return this.vars.get(key);
@@ -41,14 +49,14 @@ class MockEnv implements IEnv {
   }
 }
 
-class MockProcessRunner implements IProcessRunner {
+export class MockProcessRunner implements IProcessRunner {
   private handlers: Map<string, (args: string[]) => IProcessResult> = new Map();
 
   setHandler(file: string, handler: (args: string[]) => IProcessResult) {
     this.handlers.set(file, handler);
   }
 
-  async run(file: string, args: string[], options?: any): Promise<IProcessResult> {
+  async run(file: string, args: string[], options?: ExecOptions): Promise<IProcessResult> {
     if (options?.sudo) {
       return this.sudo(file, args, { ...options, sudo: false });
     }
@@ -56,19 +64,23 @@ class MockProcessRunner implements IProcessRunner {
     if (handler) return handler(args);
     return { stdout: '', stderr: '', exitCode: 0, command: `${file} ${args.join(' ')}` };
   }
-  async sudo(file: string, args: string[], _options?: any): Promise<IProcessResult> {
+  async sudo(file: string, args: string[], _options?: ExecOptions): Promise<IProcessResult> {
     const handler = this.handlers.get(file);
     if (handler) return handler(args);
     return { stdout: '', stderr: '', exitCode: 0, command: `sudo ${file} ${args.join(' ')}` };
   }
-  async runAsUser(username: string, command: string, options?: any): Promise<IProcessResult> {
+  async runAsUser(
+    username: string,
+    command: string,
+    options?: ExecOptions,
+  ): Promise<IProcessResult> {
     return this.run('su', ['-', username, '-c', command], options);
   }
-  spawn(_file: string, _args: string[], _options?: any): any {
+  spawn(_file: string, _args: string[], _options?: ExecOptions): ISubprocess {
     return {
       pid: 1234,
-      kill: () => {},
-      catch: () => {},
+      exited: Promise.resolve(0),
+      kill: (_signal?: string) => {},
     };
   }
   async ensureSudo(): Promise<void> {

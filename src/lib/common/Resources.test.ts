@@ -4,7 +4,7 @@ import { Resources } from './Resources.ts';
 import { createMockOS, setOS } from './os/index.ts';
 
 describe('Resources', () => {
-  let mockOs: any;
+  let mockOs: ReturnType<typeof createMockOS>;
 
   beforeEach(() => {
     mockOs = createMockOS();

@@ -85,8 +85,9 @@ export class AgentManager {
     try {
       // Use the OS abstraction to run as user
       await this.os.proc.runAsUser(username, 'pkill -u $(whoami) -f opencode || true');
-    } catch (err: any) {
-      logger.error(`Failed to interrupt agent for ${sandboxId}: ${err.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to interrupt agent for ${sandboxId}: ${msg}`);
     }
 
     this.updateAgentState(sandboxId, { status: 'idle' });
@@ -109,8 +110,9 @@ export class AgentManager {
 
     try {
       await this.os.proc.runAsUser(username, 'rm -rf ~/.config/opencode/history.json || true');
-    } catch (err: any) {
-      logger.error(`Failed to reset session for ${sandboxId}: ${err.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error(`Failed to reset session for ${sandboxId}: ${msg}`);
     }
   }
 }

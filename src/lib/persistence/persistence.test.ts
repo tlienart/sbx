@@ -4,7 +4,7 @@ import { PersistenceBox } from './index.ts';
 
 describe('Persistence Box', () => {
   let persistence: PersistenceBox;
-  let mockOs: any;
+  let mockOs: ReturnType<typeof createMockOS>;
 
   beforeEach(() => {
     mockOs = createMockOS();
@@ -42,7 +42,7 @@ describe('Persistence Box', () => {
 
     const active = persistence.sandboxes.findActive();
     expect(active.length).toBe(1);
-    expect(active[0]!.id).toBe('active-1');
+    expect(active[0]?.id).toBe('active-1');
   });
 
   test('should manage sessions', () => {
