@@ -1,41 +1,19 @@
-# Plan - Fix Orpaned Zulip Sessions Recovery
+# Improvements to Bot Interaction Flow
 
-The SBX bot should gracefully handle cases where a sandbox's macOS user has been deleted (e.g., after `make clean`) but the database still tracks the session. 
+This plan addresses two user-requested improvements to the Zulip bot:
+1.  Ensuring the `plan` agent explicitly suggests switching to `build` mode.
+2.  Making `/switch <mode>` automatically trigger the agent with an implicit "ok".
 
-## Current Implementation (Self-Healing)
+## 1. Plan Agent Prompt Update
+- [x] **Modify `opencode.json`**: Update the `plan` agent's prompt to be more explicit about suggesting the `/switch build` command.
+- [x] **Modify `opencode.json`**: Update the `build` agent's prompt to similarly suggest switching back to `plan` if architecture changes are needed.
 
-### 1. `src/lib/sandbox.ts` [x]
-- Added `isSandboxAlive(id: string): Promise<boolean>` to check if the underlying macOS user exists.
+## 2. Auto-Trigger on Switch
+- [x] **Modify `src/lib/bot/dispatcher.ts`**:
+    - Update `cmdSwitch` to call `relayToAgent` immediately after a successful mode switch.
+    - Use a synthetic "ok" message content to trigger the agent's next action.
+    - Ensure the reaction logic doesn't fail if the message is synthetic (though it will use the original `/switch` message ID, which is actually correct).
 
-### 2. `src/lib/bot/dispatcher.ts` [x]
-- **Reactive Recovery**: `handleMessage` now checks `isSandboxAlive(sandboxId)`.
-    - If a sandbox is missing from the host, the bot notifies the user and automatically recreates a fresh sandbox identity, provisions the toolchain, and re-attaches the bridge.
-- **Smart Reconciliation**: `reconcileSessions` only prunes sandboxes if their Zulip topic/channel has been deleted. It **no longer** prunes sandboxes just because the host user is missing (avoiding data loss during host wipes).
-- **Status Reporting**: `/status` now identifies "Orphaned" sandboxes and invites recovery.
-
-### 3. `src/lib/db.ts` [x]
-- Enabled SQLite Foreign Keys (`PRAGMA foreign_keys = ON`) to ensure metadata is cleaned up when a sandbox is explicitly removed.
-
-## Verification
-
-### Mock Test [x]
-- Verified via `scripts/test-recovery.ts` that:
-    1. A message to a missing sandbox triggers notification and recreation.
-    2. A bot restart does NOT wipe existing session mappings even if users are missing.
-
-## Regression Fix: `test-bot.ts` failure [x]
-
-The `test-bot.ts` script uses `SKIP_PROVISION=1`, which causes `isSandboxAlive` to return `false` (since no user is created), triggering an unwanted recovery cycle during tests.
-
-### 4. `src/lib/sandbox.ts` (Correction) [x]
-- Update `isSandboxAlive` to return `true` immediately if `process.env.SKIP_PROVISION` is set. This avoids "Recovery loops" in testing/mock environments.
-
-### 5. Verification [x]
-- Run `make test_bot` and ensure it passes. [x]
-
-### Manual Verification Cycle [x]
-1. Create a sandbox: `/new demo-fix`. [x]
-2. Send a message to verify. [x]
-3. Stop bot and run `make clean`. [x]
-4. Start bot and send another message in the same topic. [x]
-5. **Expected**: Bot notifies about recovery and continues the session in a new identity. [x]
+## 3. Verification
+- [x] **Test Prompt**: Start the bot, ask it to plan something, and verify it ends with "Plan updated. Use `/switch build` to start implementation."
+- [x] **Test Auto-Trigger**: Run `/switch build` and verify the bot immediately replies with "⚙️ Thinking [build]..." and starts working without needing an extra "ok".

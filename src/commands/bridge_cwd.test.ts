@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { connect } from 'node:net';
-import { SbxBridge } from '../lib/bridge.ts';
-import { getHostUser } from '../lib/user.ts';
+import { BridgeBox } from '../lib/bridge/index.ts';
+import { getIdentity } from '../lib/identity/index.ts';
 
 interface BridgeResponse {
   type: string;
@@ -9,8 +9,8 @@ interface BridgeResponse {
 }
 
 test('SbxBridge enforces sandbox-only CWD', async () => {
-  const hostUser = await getHostUser();
-  const bridge = new SbxBridge(hostUser);
+  const hostUser = await getIdentity().users.getHostUser();
+  const bridge = new BridgeBox(hostUser);
   await bridge.start();
 
   const socketPath = bridge.getSocketPaths().command;
@@ -44,8 +44,8 @@ test('SbxBridge enforces sandbox-only CWD', async () => {
 });
 
 test('SbxBridge prevents path traversal', async () => {
-  const hostUser = await getHostUser();
-  const bridge = new SbxBridge(hostUser);
+  const hostUser = await getIdentity().users.getHostUser();
+  const bridge = new BridgeBox(hostUser);
   await bridge.start();
 
   const socketPath = bridge.getSocketPaths().command;
@@ -81,8 +81,8 @@ test('SbxBridge prevents path traversal', async () => {
 });
 
 test('SbxBridge fails if CWD does not exist', async () => {
-  const hostUser = await getHostUser();
-  const bridge = new SbxBridge(hostUser);
+  const hostUser = await getIdentity().users.getHostUser();
+  const bridge = new BridgeBox(hostUser);
   await bridge.start();
 
   const socketPath = bridge.getSocketPaths().command;

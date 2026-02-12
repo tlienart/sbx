@@ -1,10 +1,11 @@
 import chalk from 'chalk';
+import { getIdentity } from '../src/lib/identity/index.ts';
 import { logger } from '../src/lib/logger.ts';
-import { createSessionUser, getSessionUsername, userExists } from '../src/lib/user.ts';
 
 async function stage2() {
   const TEST_NAME = 'stage-test';
-  const username = await getSessionUsername(TEST_NAME);
+  const identity = getIdentity();
+  const username = await identity.users.getSessionUsername(TEST_NAME);
 
   console.log(chalk.bold.cyan('\n👤 Stage 2: Record Guarantee\n'));
 
@@ -12,16 +13,16 @@ async function stage2() {
     logger.info(`Attempting to create user: ${username}...`);
 
     // We run the creation logic
-    const createdUser = await createSessionUser(TEST_NAME);
+    await identity.setupSessionUser(TEST_NAME);
 
     logger.info('Verifying record in Directory Service (dscl)...');
-    const exists = await userExists(createdUser);
+    const exists = await identity.users.userExists(username);
 
     if (exists) {
-      logger.success(`Directory Service record found for ${createdUser}.`);
+      logger.success(`Directory Service record found for ${username}.`);
     } else {
       throw new Error(
-        `User creation reported success but record not found in dscl for ${createdUser}.`,
+        `User creation reported success but record not found in dscl for ${username}.`,
       );
     }
 

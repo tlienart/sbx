@@ -15,8 +15,7 @@ BOLD='\033[1m'
 echo -e "${BOLD}🚀 Starting SBX End-to-End Verification Suite${NC}"
 
 # Pre-flight sudo authentication
-echo -n "🔑 Checking sudo... "
-sudo -n -v 2>/dev/null || echo -e "${RED}Warning: sudo session not active. Ensure you run this in an interactive terminal or with cached credentials.${NC}"
+sudo -n -v 2>/dev/null || (echo -e "${BOLD}🔑 Sbx requires administrative privileges. Please authenticate:${NC}" && sudo -v)
 echo -e "${GREEN}Done!${NC}"
 
 # Background sudo heartbeat to keep background server authenticated
@@ -63,6 +62,9 @@ cleanup() {
   
   # Kill any leaked bridge processes
   pkill -f api_bridge.py 2>/dev/null || true
+  
+  # Cleanup local test artifacts
+  rm -rf e2e-proj
   
   ./bin/sbx cleanup > /dev/null 2>&1
 
@@ -159,19 +161,30 @@ run_test() {
 # TEST CASES
 # ------------------------------------------------------------------------------
 
-# 0. Pre-test Sandbox Cleanup
-run_test "Pre-test cleanup" "$INSTANCE" "raw-exec" \
-  '{"command": "rm -rf e2e-proj e2e_done.txt && rm -f $TMPDIR/e2e_test"}'
+# 0. Pre-test Sandbox Creation
+run_test "Pre-test creation" "$INSTANCE" "create" '{}'
 
 # 1. Identity
+if [ "$SBX_MOCK" = "1" ]; then
+  EXPECTED_USER=$(whoami)
+else
+  EXPECTED_USER="sbx_"
+fi
+
 run_test "Identity check" "$INSTANCE" "raw-exec" \
   '{"command": "whoami"}' \
-  ".stdout | contains(\"sbx_\")"
+  ".stdout | contains(\"$EXPECTED_USER\")"
 
 # 2. TMPDIR Isolation
+if [ "$SBX_MOCK" = "1" ]; then
+  EXPECTED_TMP="/var/folders"
+else
+  EXPECTED_TMP="/Users/sbx_"
+fi
+
 run_test "TMPDIR isolation" "$INSTANCE" "raw-exec" \
   '{"command": "echo $TMPDIR && touch $TMPDIR/e2e_test && ls $TMPDIR/e2e_test"}' \
-  ".stdout | contains(\"/Users/sbx_\")"
+  ".stdout | contains(\"$EXPECTED_TMP\")"
 
 # 3. CWD Security
 run_test "CWD security (git init)" "$INSTANCE" "raw-exec" \
@@ -184,9 +197,11 @@ run_test "GitHub auth proxy" "$INSTANCE" "raw-exec" \
   ".stdout | contains(\"Logged in\")"
 
 # 5. Secret Redaction
-run_test "Secret redaction" "$INSTANCE" "raw-exec" \
-  '{"command": "env | grep SBX_PROXY_ACTIVE"}' \
-  ".stdout | contains(\"SBX_PROXY_ACTIVE\")"
+if [ "$SBX_MOCK" != "1" ]; then
+  run_test "Secret redaction" "$INSTANCE" "raw-exec" \
+    '{"command": "env | grep SBX_PROXY_ACTIVE"}' \
+    ".stdout | contains(\"SBX_PROXY_ACTIVE\")"
+fi
 
 # 6. OpenCode Research (Explore)
 run_test "OpenCode Explore mode" "$INSTANCE" "execute" \

@@ -1,26 +1,35 @@
 import chalk from 'chalk';
-import { runAsUser } from '../src/lib/exec.ts';
+import { getOS } from '../src/lib/common/os/index.ts';
+import { getIdentity } from '../src/lib/identity/index.ts';
 import { logger } from '../src/lib/logger.ts';
-import { provisionSession } from '../src/lib/provision.ts';
-import { getSessionUsername } from '../src/lib/user.ts';
+import { Provisioner } from '../src/lib/provision/index.ts';
 
 async function stage5() {
   const TEST_NAME = 'stage-test';
-  const username = await getSessionUsername(TEST_NAME);
+  const identity = getIdentity();
+  const username = await identity.users.getSessionUsername(TEST_NAME);
+  const os = getOS();
+  const provisioner = new Provisioner(identity.users);
 
   console.log(chalk.bold.cyan('\n🛠️ Stage 5: Toolchain Guarantee (pkgx)\n'));
 
   try {
     logger.info(`Provisioning pkgx toolchain for ${username}...`);
     // We pre-cache standard tools for the test to ensure they work
-    await provisionSession(TEST_NAME, 'jq,gh,uv,bun');
+    await provisioner.provisionSession(TEST_NAME, 'jq,gh,uv,bun');
     logger.success('Toolchain provisioned successfully.');
 
     logger.info('Verifying pkgx and tools via login shell...');
     // We use a login shell to ensure profile files are sourced
-    const verify = await runAsUser(
-      username,
-      'zsh -l -c "pkgx --version && pkgx jq --version && pkgx gh --version && pkgx uv --version && pkgx bun --version"',
+    const verify = await os.proc.run(
+      'su',
+      [
+        '-',
+        username,
+        '-c',
+        'zsh -l -c "pkgx --version && pkgx jq --version && pkgx gh --version && pkgx uv --version && pkgx bun --version"',
+      ],
+      { sudo: true },
     );
 
     logger.success(

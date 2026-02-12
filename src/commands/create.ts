@@ -1,10 +1,9 @@
 import chalk from 'chalk';
 import { MultiBar, Presets } from 'cli-progress';
 import pLimit from 'p-limit';
-import { ensureSudo } from '../lib/exec.ts';
+import { getOS } from '../lib/common/os/index.ts';
 import { logger } from '../lib/logger.ts';
-import { provisionSession } from '../lib/provision.ts';
-import { createSessionUser } from '../lib/user.ts';
+import { getSandboxManager } from '../lib/sandbox/index.ts';
 
 export async function createCommand(
   instances: string[],
@@ -15,8 +14,9 @@ export async function createCommand(
     process.exit(1);
   }
 
+  const os = getOS();
   // Pre-flight sudo check
-  await ensureSudo();
+  await os.proc.ensureSudo();
 
   console.log(
     chalk.bold.cyan('💡 Pro Tip: ') +
@@ -41,21 +41,15 @@ export async function createCommand(
     Presets.shades_grey,
   );
 
+  const sandboxManager = getSandboxManager();
+
   const tasks = instances.map((instance) =>
     limit(async () => {
       const bar = multibar.create(100, 0, { instance, step: 'Initializing...' });
 
       try {
-        // Step 1: Create User (Includes sudoers & ACLs setup)
-        bar.update(10, { step: 'Creating user...' });
-        await createSessionUser(instance);
-
-        // Step 2: Provision tools
-        const toolMsg = options.tools
-          ? `Provisioning tools (${options.tools})...`
-          : 'Provisioning toolchain (pkgx)...';
-        bar.update(50, { step: toolMsg });
-        await provisionSession(instance, options.tools, options.provider);
+        bar.update(10, { step: 'Creating sandbox...' });
+        await sandboxManager.createSandbox(instance, options.tools, options.provider);
 
         bar.update(100, { step: 'Finished!' });
       } catch (err: unknown) {

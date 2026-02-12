@@ -1,9 +1,9 @@
 import { BotDispatcher } from '../lib/bot/dispatcher.ts';
-import { SbxBridge } from '../lib/bridge.ts';
-import { ensureSudo } from '../lib/exec.ts';
+import { BridgeBox } from '../lib/bridge/index.ts';
+import { getOS } from '../lib/common/os/index.ts';
+import { getIdentity } from '../lib/identity/index.ts';
 import { logger } from '../lib/logger.ts';
 import { ZulipMessaging } from '../lib/messaging/zulip.ts';
-import { getHostUser } from '../lib/user.ts';
 import 'dotenv/config';
 
 export async function botCommand() {
@@ -23,12 +23,14 @@ export async function botCommand() {
   logger.info('Starting SBX Bot...');
 
   try {
+    const os = getOS();
     // Proactively ask for sudo password
-    await ensureSudo();
+    await os.proc.ensureSudo();
     logger.success('Sudo authentication verified.');
 
-    const hostUser = await getHostUser();
-    const bridge = new SbxBridge(hostUser);
+    const identity = getIdentity();
+    const hostUser = await identity.users.getHostUser();
+    const bridge = new BridgeBox(hostUser);
 
     await bridge.start();
 

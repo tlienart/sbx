@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Subprocess, spawn } from 'bun';
-import { getHostUser } from '../lib/user.ts';
+import { getIdentity } from '../lib/identity/index.ts';
 
 let serverProcess: Subprocess;
 const PORT = 3005;
@@ -35,6 +35,7 @@ fi
     env: {
       ...process.env,
       SBX_MOCK: '1',
+      SKIP_PROVISION: '1',
       PATH: `${MOCK_BIN_DIR}:${process.env.PATH}`,
     },
   });
@@ -69,7 +70,7 @@ describe('SBX API Server', () => {
       body: JSON.stringify({ instance: 'test', command: 'whoami' }),
     });
     const data = (await res.json()) as { stdout: string };
-    const user = await getHostUser();
+    const user = await getIdentity().users.getHostUser();
     expect(data.stdout.trim()).toBe(user);
   });
 

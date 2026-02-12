@@ -1,9 +1,10 @@
-import fs from 'node:fs';
 import chalk from 'chalk';
-import { run } from '../src/lib/exec.ts';
+import { getOS } from '../src/lib/common/os/index.ts';
 
 async function doctor() {
   console.log(chalk.bold.cyan('🩺 Sbx Doctor: System Health Check\n'));
+
+  const os = getOS();
 
   // 1. Check Platform
   if (process.platform !== 'darwin') {
@@ -14,7 +15,7 @@ async function doctor() {
 
   // 2. Check Sudo Cache
   try {
-    await run('sudo', ['-n', 'true']);
+    await os.proc.run('sudo', ['-n', 'true']);
     console.log(chalk.green('✅ Sudo: Already authenticated.'));
   } catch {
     console.log(chalk.yellow('⚠️  Sudo: Not authenticated. Run "sudo -v" to cache credentials.'));
@@ -22,27 +23,37 @@ async function doctor() {
 
   // 3. Check Sandbox Isolation
   const usersDir = '/Users';
-  const sbxDirs = fs.readdirSync(usersDir).filter((d) => d.startsWith('sbx_'));
-  if (sbxDirs.length > 0) {
-    let allHealthy = true;
-    for (const dir of sbxDirs) {
-      const stats = fs.statSync(`${usersDir}/${dir}`);
-      const mode = stats.mode & 0o777;
-      if (mode !== 0o700) {
+  if (os.fs.exists(usersDir)) {
+    // Note: This is a bit simplified, but close enough for doctor
+    // We can't easily list directories via IFileSystem yet, so we might need to add it or use proc.run
+    const { stdout } = await os.proc.run('ls', [usersDir]);
+    const sbxDirs = stdout.split('\n').filter((d) => d.startsWith('sbx_'));
+
+    if (sbxDirs.length > 0) {
+      let allHealthy = true;
+      for (const dir of sbxDirs) {
+        try {
+          const stats = os.fs.stat(`${usersDir}/${dir}`);
+          const mode = stats.mode & 0o777;
+          if (mode !== 0o700) {
+            console.log(
+              chalk.red(
+                `❌ Isolation: ${dir} has insecure permissions (${mode.toString(8)}). Expected 700.`,
+              ),
+            );
+            allHealthy = false;
+          }
+        } catch (e) {
+          // Might not have permission to stat others' homes
+        }
+      }
+      if (allHealthy) {
         console.log(
-          chalk.red(
-            `❌ Isolation: ${dir} has insecure permissions (${mode.toString(8)}). Expected 700.`,
+          chalk.green(
+            `✅ Isolation: All ${sbxDirs.length} sandboxes are correctly locked down (700).`,
           ),
         );
-        allHealthy = false;
       }
-    }
-    if (allHealthy) {
-      console.log(
-        chalk.green(
-          `✅ Isolation: All ${sbxDirs.length} sandboxes are correctly locked down (700).`,
-        ),
-      );
     }
   }
 

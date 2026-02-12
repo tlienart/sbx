@@ -1,17 +1,20 @@
 import fs from 'node:fs';
 import chalk from 'chalk';
-import { SbxBridge } from '../src/lib/bridge.ts';
-import { runAsUser } from '../src/lib/exec.ts';
+import { BridgeBox } from '../src/lib/bridge/index.ts';
+import { getOS } from '../src/lib/common/os/index.ts';
+import { getIdentity } from '../src/lib/identity/index.ts';
 import { logger } from '../src/lib/logger.ts';
-import { provisionSession } from '../src/lib/provision.ts';
-import { getHostUser, getSessionUsername } from '../src/lib/user.ts';
+import { Provisioner } from '../src/lib/provision/index.ts';
 
 async function stage6() {
-  const hostUser = await getHostUser();
+  const identity = getIdentity();
+  const hostUser = await identity.users.getHostUser();
+  const os = getOS();
+  const provisioner = new Provisioner(identity.users);
   const TEST_NAME = 'stage-test';
 
   // First try the standard stage-test user
-  let username = await getSessionUsername(TEST_NAME);
+  let username = await identity.users.getSessionUsername(TEST_NAME);
   let instanceName = TEST_NAME;
 
   // Verify user exists, if not find an existing one
@@ -34,7 +37,7 @@ async function stage6() {
     chalk.bold.cyan(`\n🛠️ Stage 6: Bridge Git Auth & Security Guarantee (using ${username})\n`),
   );
 
-  const bridge = new SbxBridge(hostUser, username);
+  const bridge = new BridgeBox(hostUser, username);
 
   try {
     logger.info('Starting bridge for testing...');
@@ -42,11 +45,11 @@ async function stage6() {
     logger.success('Bridge started.');
 
     logger.info('Ensuring sandbox is provisioned with shims...');
-    await provisionSession(instanceName);
+    await provisioner.provisionSession(instanceName);
 
     // Test Case 1: Successful Bridge Auth (Git & GH)
     logger.info('Testing git ls-remote via bridge...');
-    const gitTest = await runAsUser(
+    const gitTest = await os.proc.runAsUser(
       username,
       'zsh -l -c "git ls-remote https://github.com/google/googletest.git HEAD"',
     );
@@ -57,7 +60,7 @@ async function stage6() {
     }
 
     logger.info('Testing gh auth status via bridge...');
-    const ghTest = await runAsUser(username, 'zsh -l -c "gh auth status"');
+    const ghTest = await os.proc.runAsUser(username, 'zsh -l -c "gh auth status"');
     if (ghTest.exitCode === 0 && ghTest.stdout.includes('Logged in')) {
       logger.success('gh auth status succeeded via bridge.');
     } else {
@@ -75,11 +78,18 @@ async function stage6() {
     for (const cmd of blockedCommands) {
       logger.info(`Testing blocked command: ${cmd}`);
       try {
-        const blocked = await runAsUser(username, `zsh -l -c "${cmd}"`);
+        const blocked = await os.proc.runAsUser(username, `zsh -l -c "${cmd}"`);
         // If it succeeds, it's a failure (should have been blocked)
-        throw new Error(
-          `Security block FAILED for: ${cmd}. Command exited with code 0. Output: ${blocked.stdout}`,
-        );
+        if (blocked.exitCode === 0) {
+          throw new Error(
+            `Security block FAILED for: ${cmd}. Command exited with code 0. Output: ${blocked.stdout}`,
+          );
+        }
+        if (blocked.stderr.includes('not allowed for security reasons')) {
+          logger.success(`Security block confirmed for: ${cmd}`);
+        } else {
+          throw new Error(`Command failed but not for security reasons: ${blocked.stderr}`);
+        }
       } catch (err: unknown) {
         if (err instanceof Error && err.message.includes('not allowed for security reasons')) {
           logger.success(`Security block confirmed for: ${cmd}`);
@@ -91,14 +101,23 @@ async function stage6() {
 
     // Test Case 3: Zero-Leak Guarantee
     logger.info('Verifying no secrets leaked to sandbox filesystem...');
-    const homeFiles = await runAsUser(username, 'ls -la ~/');
+    const homeFiles = await os.proc.runAsUser(username, 'ls -la ~/');
     if (homeFiles.stdout.includes('.gitconfig')) {
       throw new Error('LEAK DETECTED: .gitconfig found in sandbox home!');
     }
 
     try {
-      await runAsUser(username, 'ls -la ~/.gitconfig', { silent: true });
-      throw new Error('LEAK DETECTED: .gitconfig accessible in sandbox home!');
+      const accessCheck = await os.proc.runAsUser(username, 'ls -la ~/.gitconfig', {
+        reject: false,
+      });
+      if (accessCheck.exitCode === 0) {
+        throw new Error('LEAK DETECTED: .gitconfig accessible in sandbox home!');
+      }
+      if (accessCheck.stderr.includes('No such file or directory')) {
+        logger.success('Confirmed: .gitconfig is not in sandbox home.');
+      } else {
+        throw new Error(`Unexpected error checking for .gitconfig: ${accessCheck.stderr}`);
+      }
     } catch (err: unknown) {
       if (err instanceof Error && err.message.includes('No such file or directory')) {
         logger.success('Confirmed: .gitconfig is not in sandbox home.');

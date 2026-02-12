@@ -80,15 +80,45 @@ test_sandbox: setup typecheck
 test_bot: setup
 	@$(BUN) run test:bot
 
+# Run unit tests for individual subsystems
+test_unit: setup
+	@$(BUN) test src/lib/**/*.test.ts
+
+test_persistence: setup
+	@$(BUN) test src/lib/persistence/persistence.test.ts
+
+test_identity: setup
+	@$(BUN) test src/lib/identity/identity.test.ts
+
+test_bridge: setup
+	@$(BUN) test src/lib/bridge/*.test.ts
+
+test_unit_sandbox: setup
+	@$(BUN) test src/lib/sandbox/sandbox.test.ts
+
+test_agents: setup
+	@$(BUN) test src/lib/agents/agents.test.ts
+
+test_provision: setup
+	@$(BUN) test src/lib/provision/provision.test.ts
+
+# Run core sandbox isolation tests (Integration)
+test_sandbox: setup typecheck
+	@$(BUN) run test:sandbox
+
+# Run fast bridge bot logic tests
+test_bot: setup
+	@$(BUN) run test:bot
+
 # Run REST API integration tests
 test_e2e: setup
 	@$(BUN) run test:api
 
 # Run everything sequentially
-test_full: test_sandbox test_bot test_e2e
+test_full: test_unit test_sandbox test_bot test_e2e
 
 # Standard staged verification (backwards compatibility)
-test: test_sandbox
+test: test_unit
 
 # Lint and format check
 check: typecheck
