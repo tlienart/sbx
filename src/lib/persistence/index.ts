@@ -26,12 +26,8 @@ export class PersistenceBox {
 
     // Ensure DB file is readable/writable by everyone so sudo and non-sudo can share it
     // We do this via the OS abstraction
-    try {
-      os.proc.run('chmod', ['666', finalDbPath], { sudo: true, reject: false });
-      os.proc.run('chmod', ['777', dbDir], { sudo: true, reject: false });
-    } catch {
-      // Ignore if chmod fails
-    }
+    os.proc.run('chmod', ['666', finalDbPath], { sudo: true, reject: false }).catch(() => {});
+    os.proc.run('chmod', ['777', dbDir], { sudo: true, reject: false }).catch(() => {});
 
     this.initializeSchema();
 

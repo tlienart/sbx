@@ -47,6 +47,9 @@ describe('CommandBridge', () => {
       cwd: '/Users/sbx_test_inst',
     };
 
+    // Ensure CWD exists in mock FS
+    mockOs.fs.mkdir('/Users/sbx_test_inst', { recursive: true });
+
     // Mock spawn
     mockOs.proc.spawn = mock(() => ({
       stdout: new ReadableStream({
@@ -113,6 +116,9 @@ describe('CommandBridge', () => {
       args: ['-rf', '/'],
       cwd: '/Users/sbx_test_inst',
     };
+
+    // Ensure CWD exists in mock FS
+    mockOs.fs.mkdir('/Users/sbx_test_inst', { recursive: true });
 
     // biome-ignore lint/suspicious/noExplicitAny: access private for testing
     await (bridge as any).handleRequest(socket, request);

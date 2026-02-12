@@ -68,30 +68,38 @@ export class CommandBridge {
       },
     });
 
-    this.setPermissions();
-
     // Wait for socket
     for (let i = 0; i < 20; i++) {
-      if (this.os.fs.exists(this.socketPath)) return;
+      if (this.os.fs.exists(this.socketPath)) {
+        this.setPermissions();
+        return;
+      }
       await new Promise((r) => setTimeout(r, 100));
     }
     throw new Error('Timed out waiting for command bridge socket');
   }
 
   private setPermissions() {
+    if (!this.os.fs.exists(this.socketPath)) {
+      logger.debug(
+        `[CommandBridge] Socket path ${this.socketPath} does not exist yet, skipping permissions.`,
+      );
+      return;
+    }
+
     if (this.sandboxUser) {
       try {
-        this.os.proc.sudo('chmod', [
-          '+a',
-          `user:${this.sandboxUser} allow read,write`,
-          this.socketPath,
-        ]);
+        this.os.proc.sudo(
+          'chmod',
+          ['+a', `user:${this.sandboxUser} allow read,write`, this.socketPath],
+          { reject: false },
+        );
       } catch (err) {
         logger.debug(`[CommandBridge] Failed to set ACL on socket: ${err}`);
-        this.os.proc.run('chmod', ['666', this.socketPath]);
+        this.os.proc.run('chmod', ['666', this.socketPath], { reject: false });
       }
     } else {
-      this.os.proc.run('chmod', ['666', this.socketPath]);
+      this.os.proc.run('chmod', ['666', this.socketPath], { reject: false });
     }
   }
 
@@ -127,6 +135,10 @@ export class CommandBridge {
       const resolvedCwd = resolve(request.cwd);
       if (!resolvedCwd.startsWith('/Users/sbx_')) {
         throw new Error(`Invalid CWD: ${resolvedCwd}`);
+      }
+
+      if (!this.os.fs.exists(resolvedCwd)) {
+        throw new Error(`CWD does not exist: ${resolvedCwd}`);
       }
 
       const proc = this.os.proc.spawn(commandPath, request.args, {

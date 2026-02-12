@@ -112,31 +112,40 @@ export class ApiProxy {
 
     this.server.listen(this.socketPath, () => {
       logger.debug(`[ApiProxy] Listening on ${this.socketPath}`);
-      this.setPermissions();
     });
 
     // Wait for socket
     for (let i = 0; i < 20; i++) {
-      if (this.os.fs.exists(this.socketPath)) return;
+      if (this.os.fs.exists(this.socketPath)) {
+        this.setPermissions();
+        return;
+      }
       await new Promise((r) => setTimeout(r, 100));
     }
     throw new Error('Timed out waiting for API proxy socket');
   }
 
   private setPermissions() {
+    if (!this.os.fs.exists(this.socketPath)) {
+      logger.debug(
+        `[ApiProxy] Socket path ${this.socketPath} does not exist yet, skipping permissions.`,
+      );
+      return;
+    }
+
     if (this.sandboxUser) {
       try {
-        this.os.proc.sudo('chmod', [
-          '+a',
-          `user:${this.sandboxUser} allow read,write`,
-          this.socketPath,
-        ]);
+        this.os.proc.sudo(
+          'chmod',
+          ['+a', `user:${this.sandboxUser} allow read,write`, this.socketPath],
+          { reject: false },
+        );
       } catch (err) {
         logger.debug(`[ApiProxy] Failed to set ACL on socket: ${err}`);
-        this.os.proc.run('chmod', ['666', this.socketPath]);
+        this.os.proc.run('chmod', ['666', this.socketPath], { reject: false });
       }
     } else {
-      this.os.proc.run('chmod', ['666', this.socketPath]);
+      this.os.proc.run('chmod', ['666', this.socketPath], { reject: false });
     }
   }
 

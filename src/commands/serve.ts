@@ -112,12 +112,13 @@ export async function serveCommand(options: ServeOptions) {
           }
 
           const sandboxes = await sandboxManager.listSandboxes();
-          const sandbox = sandboxes.find(
+          let sandbox = sandboxes.find(
             (s) => s.id === instance || s.id.startsWith(instance) || s.name === instance,
           );
 
           if (!sandbox) {
-            return Response.json({ error: `Sandbox not found: ${instance}` }, { status: 404 });
+            logger.info(`[API] Sandbox not found, auto-creating: ${instance}`);
+            sandbox = await sandboxManager.createSandbox(instance);
           }
 
           const instanceName = sandbox.id.split('-')[0] as string;
@@ -184,12 +185,13 @@ export async function serveCommand(options: ServeOptions) {
           }
 
           const sandboxes = await sandboxManager.listSandboxes();
-          const sandbox = sandboxes.find(
+          let sandbox = sandboxes.find(
             (s) => s.id === instance || s.id.startsWith(instance) || s.name === instance,
           );
 
           if (!sandbox) {
-            return Response.json({ error: `Sandbox not found: ${instance}` }, { status: 404 });
+            logger.info(`[API] Sandbox not found, auto-creating: ${instance}`);
+            sandbox = await sandboxManager.createSandbox(instance, undefined, provider);
           }
 
           const instanceName = sandbox.id.split('-')[0] as string;

@@ -32,6 +32,7 @@ echo "{\\"type\\":\\"step_finish\\",\\"sessionID\\":\\"$SESSION_ID\\"}"
     env: {
       ...process.env,
       SBX_MOCK: '1',
+      SKIP_PROVISION: '1',
       PATH: `${MOCK_BIN_DIR}:${process.env.PATH}`,
     },
   });

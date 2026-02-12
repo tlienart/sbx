@@ -10,7 +10,7 @@ beforeAll(async () => {
   serverProcess = spawn(['bun', 'src/index.ts', 'serve', '-p', PORT.toString()], {
     stdout: 'inherit',
     stderr: 'inherit',
-    env: { ...process.env, SBX_MOCK: '1' },
+    env: { ...process.env, SBX_MOCK: '1', SKIP_PROVISION: '1' },
   });
 
   // Wait for server to be ready
