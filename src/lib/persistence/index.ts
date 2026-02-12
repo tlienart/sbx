@@ -23,6 +23,16 @@ export class PersistenceBox {
 
     this.db = new Database(finalDbPath);
     this.db.run('PRAGMA foreign_keys = ON;');
+
+    // Ensure DB file is readable/writable by everyone so sudo and non-sudo can share it
+    // We do this via the OS abstraction
+    try {
+      os.proc.run('chmod', ['666', finalDbPath], { sudo: true, reject: false });
+      os.proc.run('chmod', ['777', dbDir], { sudo: true, reject: false });
+    } catch {
+      // Ignore if chmod fails
+    }
+
     this.initializeSchema();
 
     this.sandboxes = new SandboxRepository(this.db);

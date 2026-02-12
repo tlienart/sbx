@@ -27,6 +27,14 @@ describe('AgentManager', () => {
           status: 'active',
         } as Sandbox),
       ),
+      findSandbox: mock(() =>
+        Promise.resolve({
+          id: 'sb-1',
+          name: 'test',
+          createdAt: new Date(),
+          status: 'active',
+        } as Sandbox),
+      ),
       createSandbox: mock(() => Promise.resolve({} as Sandbox)),
       listSandboxes: mock(() => Promise.resolve([])),
       removeSandbox: mock(() => Promise.resolve()),

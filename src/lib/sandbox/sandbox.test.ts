@@ -64,6 +64,23 @@ describe('SandboxManager', () => {
     expect(list.length).toBe(2);
   });
 
+  test('should find sandbox by name or prefix', async () => {
+    mockOs.env.set('SKIP_PROVISION', '1');
+    const sb = await sandboxManager.createSandbox('my-special-name');
+
+    const foundByName = await sandboxManager.findSandbox('my-special-name');
+    expect(foundByName?.id).toBe(sb.id);
+
+    const foundById = await sandboxManager.findSandbox(sb.id);
+    expect(foundById?.id).toBe(sb.id);
+
+    const foundByPrefix = await sandboxManager.findSandbox(sb.id.slice(0, 8));
+    expect(foundByPrefix?.id).toBe(sb.id);
+
+    const notFound = await sandboxManager.findSandbox('non-existent');
+    expect(notFound).toBeUndefined();
+  });
+
   test('should remove sandbox and cleanup identity', async () => {
     mockOs.env.set('SKIP_PROVISION', '1');
     const sb = await sandboxManager.createSandbox('to-remove');

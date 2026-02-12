@@ -36,8 +36,14 @@ export async function deleteCommand(instances: string[], options: { concurrency?
       const bar = multibar.create(100, 0, { instance, step: 'Deleting...' });
 
       try {
+        bar.update(20, { step: 'Resolving...' });
+        const sandbox = await sandboxManager.findSandbox(instance);
+        if (!sandbox) {
+          throw new Error(`Sandbox "${instance}" not found`);
+        }
+
         bar.update(50, { step: 'Removing sandbox...' });
-        await sandboxManager.removeSandbox(instance);
+        await sandboxManager.removeSandbox(sandbox.id);
 
         bar.update(100, { step: 'Done' });
       } catch (err: unknown) {

@@ -69,6 +69,13 @@ export class DefaultSandboxManager implements SandboxManager {
     };
   }
 
+  async findSandbox(identifier: string): Promise<Sandbox | undefined> {
+    const sandboxes = await this.listSandboxes();
+    return sandboxes.find(
+      (s) => s.id === identifier || s.id.startsWith(identifier) || s.name === identifier,
+    );
+  }
+
   async listSandboxes(): Promise<Sandbox[]> {
     const rows = this.sandboxRepo.findAll();
     return rows.map((row) => ({

@@ -15,10 +15,7 @@ export async function execCommand(instance: string, args: string[]) {
   const sandboxManager = getSandboxManager();
 
   // Find sandbox by name or ID
-  const sandboxes = await sandboxManager.listSandboxes();
-  const sandbox = sandboxes.find(
-    (s) => s.id === instance || s.id.startsWith(instance) || s.name === instance,
-  );
+  const sandbox = await sandboxManager.findSandbox(instance);
 
   if (!sandbox) {
     logger.error(`Instance "${instance}" not found. Run "sbx list" to see available sessions.`);
