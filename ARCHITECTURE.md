@@ -167,7 +167,8 @@ SBX employs a dual-layer network security model to prevent unauthorized data exf
       |
       +-- (A) Kernel Firewall (PF) -- [BLOCKS ALL EXCEPT 127.0.0.1]
       |
-      +-- (B) Traffic Proxy (Node) -- [DOMAIN WHITELIST]
+       +-- (B) Traffic Proxy (Bun) -- [DOMAIN WHITELIST]
+
 ```
 
 **How it works:**

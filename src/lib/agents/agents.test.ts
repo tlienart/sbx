@@ -41,6 +41,13 @@ describe('AgentManager', () => {
       isSandboxAlive: mock(() => Promise.resolve(true)),
       onNetworkBlocked: mock(() => {}),
       updateWhitelist: mock(() => Promise.resolve()),
+      getNetworkStatus: mock(() =>
+        Promise.resolve({
+          restricted: false,
+          whitelist: [],
+          pf: { enabled: true, anchorReferenced: true },
+        }),
+      ),
     };
 
     agentManager = new AgentManager(persistence.agents, identity.users, sandboxManager);
