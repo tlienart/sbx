@@ -21,11 +21,11 @@ export async function listCommand() {
       ),
     );
     console.log(
-      `${chalk.bold('NAME'.padEnd(20))} ${chalk.bold('ID'.padEnd(10))} ${chalk.bold('STATUS'.padEnd(12))} ${chalk.bold('USER')}`,
+      `${chalk.bold('NAME'.padEnd(20))} ${chalk.bold('ID'.padEnd(10))} ${chalk.bold('STATUS'.padEnd(12))} ${chalk.bold('NET'.padEnd(8))} ${chalk.bold('USER')}`,
     );
     console.log(
       chalk.gray(
-        '--------------------------------------------------------------------------------',
+        '-----------------------------------------------------------------------------------------',
       ),
     );
 
@@ -36,9 +36,10 @@ export async function listCommand() {
       const status = active ? chalk.green('● active') : chalk.red('○ inactive');
       const name = (sb.name || 'unnamed').padEnd(20);
       const shortId = sb.id.split('-')[0]?.padEnd(10);
+      const netStatus = sb.restrictedNetwork ? chalk.yellow('locked') : chalk.gray('open');
 
       console.log(
-        `${chalk.cyan(name)} ${shortId} ${status.padEnd(12 + 10)} ${chalk.gray(`(${username})`)}`,
+        `${chalk.cyan(name)} ${shortId} ${status.padEnd(12 + 10)} ${netStatus.padEnd(8 + 10)} ${chalk.gray(`(${username})`)}`,
       );
     }
 

@@ -19,6 +19,8 @@ program
   .option('-t, --tools <tools>', 'additional tools to install (comma separated)')
   .option('-p, --provider <provider>', 'LLM provider (google, openai, anthropic)', 'google')
   .option('-c, --concurrency <number>', 'number of parallel setups', '2')
+  .option('--restrict-network', 'Enable outbound network restriction')
+  .option('--whitelist <domains>', 'Comma-separated list of allowed domains')
   .action(createCommand);
 
 program.command('list').description('List all active user sessions').action(listCommand);

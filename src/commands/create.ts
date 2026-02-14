@@ -7,7 +7,13 @@ import { getSandboxManager } from '../lib/sandbox/index.ts';
 
 export async function createCommand(
   instances: string[],
-  options: { tools?: string; concurrency?: string; provider?: string },
+  options: {
+    tools?: string;
+    concurrency?: string;
+    provider?: string;
+    restrictNetwork?: boolean;
+    whitelist?: string;
+  },
 ) {
   if (instances.length === 0) {
     logger.error('Please specify at least one instance name.');
@@ -49,7 +55,13 @@ export async function createCommand(
 
       try {
         bar.update(10, { step: 'Creating sandbox...' });
-        await sandboxManager.createSandbox(instance, options.tools, options.provider);
+        await sandboxManager.createSandbox({
+          name: instance,
+          tools: options.tools,
+          provider: options.provider,
+          restrictedNetwork: options.restrictNetwork,
+          whitelist: options.whitelist?.split(',').map((s) => s.trim()),
+        });
 
         bar.update(100, { step: 'Finished!' });
       } catch (err: unknown) {

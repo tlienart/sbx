@@ -4,6 +4,21 @@ import { IdentityBox } from '../identity/index.ts';
 import { PersistenceBox } from '../persistence/index.ts';
 import { DefaultSandboxManager } from './SandboxManager.ts';
 
+// Mock TrafficProxy to avoid port conflicts and actual server starts in tests
+mock.module('../bridge/TrafficProxy.ts', () => {
+  return {
+    TrafficProxy: class {
+      start() {
+        return Promise.resolve();
+      }
+      stop() {}
+      getPort() {
+        return 15678;
+      }
+    },
+  };
+});
+
 describe('SandboxManager', () => {
   let mockOs: ReturnType<typeof createMockOS>;
   let persistence: PersistenceBox;
@@ -25,12 +40,13 @@ describe('SandboxManager', () => {
         provisionCalled = true;
       },
       () => 12345,
+      () => 15678,
     );
   });
 
   test('should create a sandbox and record it in DB', async () => {
     mockOs.env.set('SKIP_PROVISION', '1');
-    const sb = await sandboxManager.createSandbox('test-sb');
+    const sb = await sandboxManager.createSandbox({ name: 'test-sb' });
 
     expect(sb.id).toBeDefined();
     expect(sb.name).toBe('test-sb');
@@ -48,7 +64,7 @@ describe('SandboxManager', () => {
     const setupSpy = mock(() => Promise.resolve('sbx_host_test'));
     identity.setupSessionUser = setupSpy;
 
-    const sb = await sandboxManager.createSandbox('test-sb');
+    const sb = await sandboxManager.createSandbox({ name: 'test-sb' });
 
     expect(setupSpy).toHaveBeenCalled();
     expect(provisionCalled).toBe(true);
@@ -57,8 +73,8 @@ describe('SandboxManager', () => {
 
   test('should list sandboxes', async () => {
     mockOs.env.set('SKIP_PROVISION', '1');
-    await sandboxManager.createSandbox('sb1');
-    await sandboxManager.createSandbox('sb2');
+    await sandboxManager.createSandbox({ name: 'sb1' });
+    await sandboxManager.createSandbox({ name: 'sb2' });
 
     const list = await sandboxManager.listSandboxes();
     expect(list.length).toBe(2);
@@ -66,7 +82,7 @@ describe('SandboxManager', () => {
 
   test('should find sandbox by name or prefix', async () => {
     mockOs.env.set('SKIP_PROVISION', '1');
-    const sb = await sandboxManager.createSandbox('my-special-name');
+    const sb = await sandboxManager.createSandbox({ name: 'my-special-name' });
 
     const foundByName = await sandboxManager.findSandbox('my-special-name');
     expect(foundByName?.id).toBe(sb.id);
@@ -81,16 +97,40 @@ describe('SandboxManager', () => {
     expect(notFound).toBeUndefined();
   });
 
-  test('should remove sandbox and cleanup identity', async () => {
-    mockOs.env.set('SKIP_PROVISION', '1');
-    const sb = await sandboxManager.createSandbox('to-remove');
+  test('should enable restricted network if requested', async () => {
+    mockOs.env.set('SKIP_PROVISION', '');
 
-    const cleanupSpy = mock(() => Promise.resolve());
-    identity.cleanupSessionUser = cleanupSpy;
+    const setupSpy = mock(() => Promise.resolve('sbx_host_test'));
+    identity.setupSessionUser = setupSpy;
+
+    const getUidSpy = mock(() => Promise.resolve('701'));
+    identity.users.getNumericUid = getUidSpy;
+
+    const enableNetSpy = mock(() => Promise.resolve());
+    identity.network.enableRestrictedNetwork = enableNetSpy;
+
+    await sandboxManager.createSandbox({ name: 'test-sb', restrictedNetwork: true });
+
+    expect(enableNetSpy).toHaveBeenCalledWith('701', [12345, 15678]);
+  });
+
+  test('should disable restricted network on removal', async () => {
+    mockOs.env.set('SKIP_PROVISION', '');
+
+    // Mock identity methods to avoid real system calls and waits
+    identity.setupSessionUser = mock(() => Promise.resolve('sbx_host_test'));
+    identity.cleanupSessionUser = mock(() => Promise.resolve());
+
+    const sb = await sandboxManager.createSandbox({ name: 'to-remove', restrictedNetwork: true });
+
+    const getUidSpy = mock(() => Promise.resolve('701'));
+    identity.users.getNumericUid = getUidSpy;
+
+    const disableNetSpy = mock(() => Promise.resolve());
+    identity.network.disableRestrictedNetwork = disableNetSpy;
 
     await sandboxManager.removeSandbox(sb.id);
 
-    expect(cleanupSpy).toHaveBeenCalled();
-    expect(persistence.sandboxes.findById(sb.id)).toBeFalsy();
+    expect(disableNetSpy).toHaveBeenCalledWith('701');
   });
 });

@@ -30,6 +30,7 @@ export class Provisioner {
     tools?: string,
     provider = 'google',
     apiPort = 9999,
+    proxyPort?: number,
   ): Promise<void> {
     await this.ensurePkgxOnHost();
     const sessionUser = await this.identity.getSessionUsername(instanceName);
@@ -38,12 +39,25 @@ export class Provisioner {
 
     const profileFiles = ['.zprofile', '.zshenv', '.bash_profile', '.bashrc'];
 
+    const proxyScript = proxyPort
+      ? `
+export HTTP_PROXY="http://127.0.0.1:${proxyPort}"
+export HTTPS_PROXY="http://127.0.0.1:${proxyPort}"
+export http_proxy="http://127.0.0.1:${proxyPort}"
+export https_proxy="http://127.0.0.1:${proxyPort}"
+export NO_PROXY="localhost,127.0.0.1"
+export no_proxy="localhost,127.0.0.1"
+`.trim()
+      : '';
+
     const setupScript = `
 export PATH="$HOME/.sbx/bin:/usr/local/bin:$PATH"
 export PKGX_YES=1
 export TMPDIR="$HOME/tmp"
 export BRIDGE_SOCK="${bridgeDir}/bridge.sock"
 export PROXY_SOCK="${bridgeDir}/proxy.sock"
+
+${proxyScript}
 
 # Satisfy LLM SDKs pre-flight checks
 export GOOGLE_GENERATIVE_AI_API_KEY="SBX_PROXY_ACTIVE"

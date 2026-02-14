@@ -184,7 +184,11 @@ Sbx uses the native macOS `sysadminctl` utility to create a genuine, standard ma
 *   **Host Home Protection**: Sandboxes cannot access your host user's files (provided your host home is `700`).
 *   **System `/tmp`**: Sandboxes have access to the system `/tmp` (standard macOS `1777`), which is required for many core tools to function. Sensitive data should never be stored in the system `/tmp`.
 *   **Processes**: Processes running inside the sandbox are owned by the sandbox user. They can see system-wide processes but cannot modify or terminate them.
-*   **Network**: Sandboxes have **full internet access** by default. There is no network-level sandboxing or firewalling included. Malicious activity will appear as coming from your IP.
+*   **Network**: Sandboxes can be configured with **Restricted Network** mode (`--restrict-network`). In this mode:
+    *   **Kernel Firewall (PF)**: Blocks all outbound traffic except to localhost.
+    *   **Domain Whitelist**: A local proxy enforces a whitelist of allowed domains (e.g., `github.com`, `pkgx.sh`).
+    *   **Interactive Approval**: If an agent tries to access a blocked domain, you'll receive a notification and can approve it in real-time.
+    *   **Raw Traffic Alerts**: Non-HTTP traffic is caught by the kernel firewall and reported to you.
 *   **Secrets**: Secrets (API keys, GitHub tokens) are **never stored or visible** inside the sandbox. They stay on the host and are used by the Bridge to sign requests on behalf of the sandbox.
 
 ### Bridge Hardening
@@ -248,6 +252,16 @@ sbx bot
    - `/mode`: List available modes.
    - `/switch <mode>`: Switch between `plan`, `build`, and `research`.
    - `/interrupt`: Stop the current running task.
+
+## Troubleshooting
+
+### Restricted Network Issues
+If `--restrict-network` is not blocking traffic as expected, or if you are not receiving alerts:
+1.  **Check PF Status**: Run `sudo pfctl -s info` to ensure the packet filter is enabled.
+2.  **Verify Anchor**: Ensure your `/etc/pf.conf` contains `anchor "com.apple/*"` or `anchor "com.apple/sbx/*"`. SBX uses the `com.apple/sbx` anchor to stay isolated from your main rules.
+3.  **Permissions**: Ensure your Terminal has **Full Disk Access** (see Security & Permissions section).
+
+For a detailed view of the current network state, use the `/network` command in Zulip.
 
 ## License
 

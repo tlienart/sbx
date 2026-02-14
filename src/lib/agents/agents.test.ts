@@ -39,6 +39,16 @@ describe('AgentManager', () => {
       listSandboxes: mock(() => Promise.resolve([])),
       removeSandbox: mock(() => Promise.resolve()),
       isSandboxAlive: mock(() => Promise.resolve(true)),
+      onNetworkBlocked: mock(() => {}),
+      initNetwork: mock(() => Promise.resolve()),
+      updateWhitelist: mock(() => Promise.resolve()),
+      getNetworkStatus: mock(() =>
+        Promise.resolve({
+          restricted: false,
+          whitelist: [],
+          pf: { enabled: true, anchorReferenced: true },
+        }),
+      ),
     };
 
     agentManager = new AgentManager(persistence.agents, identity.users, sandboxManager);
@@ -48,7 +58,7 @@ describe('AgentManager', () => {
       id: 'sb-1',
       name: 'test',
       status: 'active',
-      created_at: new Date().toISOString(),
+      createdAt: new Date(),
     });
   });
 

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { createMockOS, setOS } from '../common/os/index.ts';
+import type { Sandbox } from '../sandbox/types.ts';
 import { PersistenceBox } from './index.ts';
 
 describe('Persistence Box', () => {
@@ -14,16 +15,20 @@ describe('Persistence Box', () => {
   });
 
   test('should create and find sandboxes', () => {
-    const sb = {
+    const sb: Sandbox = {
       id: 'test-id',
       name: 'test-name',
-      status: 'active' as const,
-      created_at: new Date().toISOString(),
+      status: 'active',
+      createdAt: new Date(),
+      restrictedNetwork: false,
     };
 
     persistence.sandboxes.create(sb);
     const found = persistence.sandboxes.findById('test-id');
-    expect(found).toEqual(sb);
+    expect(found?.id).toBe(sb.id);
+    expect(found?.name).toBe(sb.name);
+    expect(found?.status).toBe(sb.status);
+    expect(found?.restrictedNetwork).toBe(false);
   });
 
   test('should find active sandboxes', () => {
@@ -31,13 +36,13 @@ describe('Persistence Box', () => {
       id: 'active-1',
       name: 'active',
       status: 'active',
-      created_at: new Date().toISOString(),
+      createdAt: new Date(),
     });
     persistence.sandboxes.create({
       id: 'archived-1',
       name: 'archived',
       status: 'archived',
-      created_at: new Date().toISOString(),
+      createdAt: new Date(),
     });
 
     const active = persistence.sandboxes.findActive();
@@ -50,7 +55,7 @@ describe('Persistence Box', () => {
       id: 'sb-id',
       name: 'test',
       status: 'active',
-      created_at: new Date().toISOString(),
+      createdAt: new Date(),
     });
     persistence.sessions.saveSession('platform', 'ext-id', 'sb-id');
     const sbId = persistence.sessions.getSandboxId('platform', 'ext-id');
@@ -66,7 +71,7 @@ describe('Persistence Box', () => {
       id: 'sb-1',
       name: 'test',
       status: 'active',
-      created_at: new Date().toISOString(),
+      createdAt: new Date(),
     });
     const state = {
       sandbox_id: 'sb-1',
