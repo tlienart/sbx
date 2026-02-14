@@ -28,11 +28,11 @@ The recent CI failure in PR #18 was caused by background processes preventing th
 - [x] Consider only creating `pflog0` if it doesn't exist.
 
 ## Verification Steps
-- [ ] **CLI Exit Check**: Run `sbx list` and `sbx create` (without `--restrict-network`) and verify they exit immediately after printing their output.
-- [ ] **Provisioning Check**: Run `sbx create test-pkgx` and verify that `pkgx` can successfully fetch tools during provisioning (no "Connection refused").
-- [ ] **Network Restriction Check**: Run `sbx create test-locked --restrict-network` and verify that:
+- [x] **CLI Exit Check**: Run `sbx list` and `sbx create` (without `--restrict-network`) and verify they exit immediately after printing their output.
+- [x] **Provisioning Check**: Run `sbx create test-pkgx` and verify that `pkgx` can successfully fetch tools during provisioning (no "Connection refused").
+- [x] **Network Restriction Check**: Run `sbx create test-locked --restrict-network` and verify that:
     - Networking is actually restricted in the sandbox.
     - `tcpdump` captures and logs blocks as expected.
-- [ ] **CI Run**: Push the changes and verify the GHA run completes successfully.
+- [x] **CI Run**: Push the changes and verify the GHA run completes successfully.
 
 Plan updated. Use `/switch build` to start implementation.
