@@ -46,6 +46,8 @@ export class PersistenceBox {
         id TEXT PRIMARY KEY,
         name TEXT,
         status TEXT NOT NULL CHECK (status IN ('active', 'archived')),
+        restricted_network INTEGER DEFAULT 0,
+        whitelist TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -72,6 +74,18 @@ export class PersistenceBox {
     // Migration: add opencode_session_id if it doesn't exist
     try {
       this.db.run('ALTER TABLE agent_states ADD COLUMN opencode_session_id TEXT');
+    } catch (err) {
+      // Column already exists
+    }
+
+    // Migration: add restricted_network and whitelist to sandboxes
+    try {
+      this.db.run('ALTER TABLE sandboxes ADD COLUMN restricted_network INTEGER DEFAULT 0');
+    } catch (err) {
+      // Column already exists
+    }
+    try {
+      this.db.run('ALTER TABLE sandboxes ADD COLUMN whitelist TEXT');
     } catch (err) {
       // Column already exists
     }

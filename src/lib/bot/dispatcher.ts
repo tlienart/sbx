@@ -30,6 +30,11 @@ export class BotDispatcher {
     await this.recoverSessions();
     await this.reconcileSessions();
 
+    const sandboxManager = getSandboxManager();
+    sandboxManager.onNetworkBlocked(async (sandboxId, domain, method, url) => {
+      await this.handleNetworkBlocked(sandboxId, domain, method, url);
+    });
+
     // Periodic reconciliation every 30 minutes
     setInterval(() => this.reconcileSessions(), 30 * 60 * 1000);
   }
@@ -112,7 +117,7 @@ export class BotDispatcher {
 
       // Recreate using the topic name as title if possible
       const topicName = msg.channelId.split(':')[1] || 'recovered';
-      const newSandbox = await sandboxManager.createSandbox(topicName);
+      const newSandbox = await sandboxManager.createSandbox({ name: topicName });
       sandboxId = newSandbox.id;
 
       // Map existing channel to new sandbox
@@ -163,6 +168,12 @@ export class BotDispatcher {
       case '/restart':
         await this.cmdRestart(msg);
         break;
+      case '/allow':
+        await this.cmdAllow(msg, args);
+        break;
+      case '/network':
+        await this.cmdNetwork(msg);
+        break;
       default:
         await this.platform.sendMessage(msg.channelId, `Unknown command: ${command}`);
     }
@@ -182,7 +193,7 @@ export class BotDispatcher {
 
       // Step 1: Identity & Toolchain
       await this.platform.sendMessage(msg.channelId, '👤 Creating sandbox identity...');
-      const sandbox = await sandboxManager.createSandbox(title);
+      const sandbox = await sandboxManager.createSandbox({ name: title });
       const instanceName = sandbox.id.split('-')[0] as string;
       const username = await identity.users.getSessionUsername(instanceName);
 
@@ -514,5 +525,77 @@ export class BotDispatcher {
       await sandboxManager.removeSandbox(sandboxId);
       persistence.sessions.deleteSession(this.platform.name, channelId);
     }
+  }
+
+  private async handleNetworkBlocked(
+    sandboxId: string,
+    domain: string,
+    method: string,
+    url: string,
+  ) {
+    const persistence = getPersistence();
+    const sessions = persistence.sessions.findBySandboxId(sandboxId);
+
+    for (const session of sessions) {
+      if (session.platform === this.platform.name) {
+        await this.platform.sendMessage(
+          session.external_id,
+          `🚨 **Network Block**: Agent tried to ${method} to \`${domain}\`${url === domain ? '' : ` (${url})`}.\n` +
+            `Do you want to allow this domain? Reply with \`/allow ${domain}\``,
+        );
+      }
+    }
+  }
+
+  private async cmdAllow(msg: IncomingMessage, args: string[]) {
+    const persistence = getPersistence();
+    const sandboxId = persistence.sessions.getSandboxId(msg.platform, msg.channelId);
+    if (!sandboxId) return;
+
+    const domain = args[0];
+    if (!domain) {
+      await this.platform.sendMessage(msg.channelId, '❌ Please specify a domain to allow.');
+      return;
+    }
+
+    const sandboxManager = getSandboxManager();
+    const sandbox = await sandboxManager.getSandbox(sandboxId);
+    const whitelist = sandbox.whitelist || [];
+    if (!whitelist.includes(domain)) {
+      whitelist.push(domain);
+      await sandboxManager.updateWhitelist(sandboxId, whitelist);
+      await this.platform.sendMessage(
+        msg.channelId,
+        `✅ Domain \`${domain}\` added to whitelist. The agent can now retry.`,
+      );
+    } else {
+      await this.platform.sendMessage(
+        msg.channelId,
+        `ℹ️ Domain \`${domain}\` is already whitelisted.`,
+      );
+    }
+  }
+
+  private async cmdNetwork(msg: IncomingMessage) {
+    const persistence = getPersistence();
+    const sandboxId = persistence.sessions.getSandboxId(msg.platform, msg.channelId);
+    if (!sandboxId) return;
+
+    const sandboxManager = getSandboxManager();
+    const status = await sandboxManager.getNetworkStatus(sandboxId);
+
+    let response = `🌐 **Network Status for Sandbox ${sandboxId}**\n\n`;
+    response += `Restriction: ${status.restricted ? '🔒 **ENABLED**' : '🔓 DISABLED'}\n`;
+    response += `PF Firewall: ${status.pf.enabled ? '✅ Enabled' : '❌ DISABLED'}\n`;
+    response += `PF Anchor Setup: ${status.pf.anchorReferenced ? '✅ Correct' : '⚠️ Missing in /etc/pf.conf'}\n\n`;
+
+    response += '**Whitelist:**\n';
+    if (status.whitelist.length > 0) {
+      response += status.whitelist.map((d: string) => `- ${d}`).join('\n');
+    } else {
+      response += '(None)';
+    }
+
+    await this.platform.sendMessage(msg.channelId, response);
   }
 }

@@ -4,6 +4,8 @@ export interface Sandbox {
   id: string;
   name: string;
   status: SandboxStatus;
+  restricted_network: number;
+  whitelist: string | null;
   created_at: string;
 }
 

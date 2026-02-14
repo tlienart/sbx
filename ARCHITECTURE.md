@@ -158,7 +158,44 @@ The `ApiProxy` provides a secure way for agents to call LLM providers (OpenAI, A
 
 ---
 
-### 5. Sandbox Runtime
+### 5. Network Security (Dual-Layer)
+
+SBX employs a dual-layer network security model to prevent unauthorized data exfiltration and restrict the agent to a "whitelist-only" internet access.
+
+```ascii
+ [Guest Agent]
+      |
+      +-- (A) Kernel Firewall (PF) -- [BLOCKS ALL EXCEPT 127.0.0.1]
+      |
+      +-- (B) Traffic Proxy (Node) -- [DOMAIN WHITELIST]
+```
+
+**How it works:**
+
+1.  **Layer 1: Kernel Firewall (PF)**:
+    - SBX uses macOS `pfctl` to create a dedicated anchor (`com.apple/sbx`) for the sandbox user.
+    - A "block all" rule is applied to the specific UID of the sandbox guest.
+    - Exceptions are only made for `127.0.0.1` on specific ports (API Bridge and Traffic Proxy).
+    - **Logging**: The block rule uses the `log` keyword, and SBX monitors the `pflog0` interface via a background `NetworkMonitor` service. This allows the system to alert the user when "raw" (non-proxy) network traffic (like a direct TCP connection or UDP packet) is blocked.
+
+2.  **Layer 2: Interactive Traffic Proxy**:
+    - The guest environment is provisioned with `HTTP_PROXY` and `HTTPS_PROXY` environment variables pointing to a local proxy running on the host.
+    - The proxy enforces a **Domain Whitelist** (stored in SQLite and configurable per sandbox).
+    - **Interactive Approval**: When the agent attempts to access a non-whitelisted domain, the proxy blocks the request and notifies the user (e.g., via Zulip). The user can then grant access in real-time using the `/allow <domain>` command.
+    - **Wildcard Support**: The whitelist supports wildcard domains (e.g., `*.google.com`).
+
+**Allows:**
+- Full internet access to trusted domains (GitHub, NPM, PyPI, etc.) out of the box.
+- Dynamic expansion of the "permitted" internet as the agent discovers new requirements.
+- Real-time visibility into all network attempts.
+
+**Doesn't Allow:**
+- **Stealth Exfiltration**: Direct connections to IP addresses or non-whitelisted domains are blocked at the kernel level.
+- **Protocol Tunneling**: Even if the agent tries to use a non-HTTP protocol, the PF firewall will catch and log it.
+
+---
+
+### 6. Sandbox Runtime
 
 The `SandboxManager` orchestrates the lifecycle and state of all sandboxes, ensuring that the ephemeral nature of the guests is managed correctly.
 

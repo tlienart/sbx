@@ -2,17 +2,23 @@ import { getOS } from '../common/os/index.ts';
 import { logger } from '../logger.ts';
 import { AclManager } from './AclManager.ts';
 import { MacOSIdentityManager } from './MacOSIdentityManager.ts';
+import { NetworkManager } from './NetworkManager.ts';
+import { NetworkMonitor } from './NetworkMonitor.ts';
 import { SudoersManager } from './SudoersManager.ts';
 
 export class IdentityBox {
   public users: MacOSIdentityManager;
   public acls: AclManager;
   public sudoers: SudoersManager;
+  public network: NetworkManager;
+  public monitor: NetworkMonitor;
 
   constructor() {
     this.users = new MacOSIdentityManager();
     this.acls = new AclManager();
     this.sudoers = new SudoersManager();
+    this.network = new NetworkManager();
+    this.monitor = new NetworkMonitor();
   }
 
   async setupSessionUser(instanceName: string): Promise<string> {
