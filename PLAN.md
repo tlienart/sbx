@@ -1,34 +1,38 @@
-# Plan - Firewall & Network Whitelisting Improvements
+# Plan: Fix Blocked/Suspicious CI and Network Issues
 
-This plan addresses the findings from the in-depth review of the SBX firewall implementation, with a focus on leveraging Bun's native performance.
+The recent CI failure in PR #18 was caused by background processes preventing the CLI from exiting and misconfigured proxy environment variables.
 
-## 1. Security Hardening
-- [x] **Restrict Localhost Access**: Update `NetworkManager.ts` to only allow the sandbox UID to connect to specific ports (API and Proxy) on `127.0.0.1`.
-- [x] **Use `quick` rules**: Ensure PF rules use the `quick` keyword to prevent accidental overrides by subsequent rules.
-- [x] **IPv6 Support**: Ensure PF rules also cover IPv6 if enabled on the host.
+## Problem Analysis
+1.  **Background Process Hang**: The `DefaultSandboxManager` constructor proactively starts a `tcpdump` process (via `NetworkMonitor`) and initializes PF. Because `tcpdump`'s stdout is piped and being read in an infinite loop, the Bun process never reaches an idle state and fails to exit after a CLI command (like `sbx create` or `sbx list`) finishes.
+2.  **Proxy Configuration Bug**: `sbx create` (without `--restrict-network`) was still configuring the sandbox user's profile with `HTTP_PROXY` environment variables. However, the `TrafficProxy` itself was only started if `restrictedNetwork` was true. This caused `pkgx` to attempt connecting to a non-existent proxy, resulting in "Connection refused" errors during provisioning.
+3.  **Global PF Side Effects**: Proactively enabling PF globally (`pfctl -e`) in the constructor is risky and can lead to unexpected network behavior in shared environments like CI.
 
-## 2. Visibility & Alerting (Non-Proxy Traffic)
-- [x] **Enable PF Logging**: Add the `log` keyword to the "block all" rule in `NetworkManager.ts`.
-- [x] **PF log interface**: Create the `pflog0` interface during initialization (`ifconfig pflog0 create`).
-- [x] **Network Monitor Service**: 
-    - Implement a service using `Bun.spawn` to capture blocked packets via `tcpdump -ni pflog0`.
-    - Parse the output to identify packets belonging to sandbox UIDs.
-    - Emit an event when a raw network block occurs.
-- [x] **User Notification**: Update `BotDispatcher` to handle "Raw Network Blocks" and alert the user that a non-HTTP request was blocked.
+## Proposed Changes
 
-## 3. Bun Modernization
-- [ ] **`Bun.serve` Migration**: Refactor `TrafficProxy.ts` to use `Bun.serve` instead of `node:http`. (Skipped: node:http is more reliable for CONNECT/forward proxy logic in Bun currently).
-- [x] **Native File I/O**: Use `Bun.write` and `Bun.file` in `NetworkManager.ts` for temporary PF configuration files.
+### 1. Lazy Network Initialization
+- [x] Remove `setupNetworkMonitor()` call from `DefaultSandboxManager` constructor.
+- [x] Add an explicit `initNetwork()` method to `SandboxManager` that enables PF and starts the monitor.
+- [x] Call `initNetwork()` only when necessary:
+    - In `serveCommand` and `botCommand` during startup.
+    - In `createSandbox` IF `options.restrictedNetwork` is true.
 
-## 4. Reliability & Diagnostics
-- [x] **Health Checks**: 
-    - Check if PF is enabled (`pfctl -s info`).
-    - Verify the SBX anchor is correctly referenced in `/etc/pf.conf`.
-- [x] **Diagnostic Command**: Add a `/network` command to the bot to show current whitelist and PF status.
+### 2. Fix Proxy Environment Variables
+- [x] In `DefaultSandboxManager.createSandbox`, only pass the `proxyPort` to `provisionSession` if `options.restrictedNetwork` is true.
+- [x] Ensure `provisionSession` handles the missing `proxyPort` gracefully (it already does, but verify).
 
-## 5. Documentation
-- [x] **Architecture Update**: Document the dual-layer (PF + Proxy) approach in `ARCHITECTURE.md`.
-- [x] **Troubleshooting Guide**: Provide clear steps for users if PF is disabled or blocked by third-party software.
+### 3. Graceful Exit for CLI
+- [x] Update `NetworkMonitor.ts` to call `.unref()` on the `tcpdump` subprocess. This ensures it doesn't prevent the parent process from exiting if it's the only thing keeping it alive.
 
-## Discussion on Risk
-The primary risk remains PF's dependency on system-level configuration. While SBX attempts to automate this, it may require user intervention on some systems. The logging mechanism and Bun-powered monitoring will help diagnose these issues with minimal overhead.
+### 4. Safety in `NetworkManager`
+- [x] Update `NetworkManager.init()` to be more cautious.
+- [x] Consider only creating `pflog0` if it doesn't exist.
+
+## Verification Steps
+- [ ] **CLI Exit Check**: Run `sbx list` and `sbx create` (without `--restrict-network`) and verify they exit immediately after printing their output.
+- [ ] **Provisioning Check**: Run `sbx create test-pkgx` and verify that `pkgx` can successfully fetch tools during provisioning (no "Connection refused").
+- [ ] **Network Restriction Check**: Run `sbx create test-locked --restrict-network` and verify that:
+    - Networking is actually restricted in the sandbox.
+    - `tcpdump` captures and logs blocks as expected.
+- [ ] **CI Run**: Push the changes and verify the GHA run completes successfully.
+
+Plan updated. Use `/switch build` to start implementation.

@@ -40,6 +40,7 @@ describe('AgentManager', () => {
       removeSandbox: mock(() => Promise.resolve()),
       isSandboxAlive: mock(() => Promise.resolve(true)),
       onNetworkBlocked: mock(() => {}),
+      initNetwork: mock(() => Promise.resolve()),
       updateWhitelist: mock(() => Promise.resolve()),
       getNetworkStatus: mock(() =>
         Promise.resolve({
