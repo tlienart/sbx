@@ -41,13 +41,11 @@ export class DefaultSandboxManager implements SandboxManager {
     ) => Promise<void>,
     private getSandboxPort: (instanceName: string) => number,
     private getTrafficProxyPort: (instanceName: string) => number,
-  ) {
-    this.setupNetworkMonitor();
-  }
+  ) {}
 
-  private setupNetworkMonitor() {
-    this.identity.network.init();
-    this.identity.monitor.start();
+  async initNetwork() {
+    await this.identity.network.init();
+    await this.identity.monitor.start();
     this.identity.monitor.onBlock((event) => {
       const sandboxId = this.uidToSandboxId.get(event.uid);
       if (sandboxId) {
@@ -88,6 +86,7 @@ export class DefaultSandboxManager implements SandboxManager {
       const username = await this.identity.setupSessionUser(instanceName);
 
       if (options.restrictedNetwork) {
+        await this.initNetwork();
         const uidStr = await this.identity.users.getNumericUid(username);
         const uid = Number.parseInt(uidStr, 10);
         this.uidToSandboxId.set(uid, id);
@@ -115,7 +114,7 @@ export class DefaultSandboxManager implements SandboxManager {
         options.tools,
         options.provider,
         apiPort,
-        proxyPort,
+        options.restrictedNetwork ? proxyPort : undefined,
       );
     } else {
       logger.info(`[Mock] Skipping provisioning for ${instanceName}`);

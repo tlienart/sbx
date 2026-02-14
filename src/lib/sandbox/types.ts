@@ -34,6 +34,7 @@ export interface SandboxManager {
   onNetworkBlocked(
     callback: (sandboxId: string, domain: string, method: string, url: string) => void,
   ): void;
+  initNetwork(): Promise<void>;
   updateWhitelist(sandboxId: string, whitelist: string[]): Promise<void>;
   getNetworkStatus(sandboxId: string): Promise<NetworkStatus>;
 }

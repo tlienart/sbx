@@ -24,6 +24,7 @@ export async function serveCommand(options: ServeOptions) {
   try {
     if (!isMock) {
       await os.proc.ensureSudo();
+      await sandboxManager.initNetwork();
     }
     await bridge.start();
     logger.success('Host bridge started.');

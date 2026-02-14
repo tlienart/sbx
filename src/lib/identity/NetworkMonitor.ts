@@ -22,6 +22,8 @@ export class NetworkMonitor {
         stderr: 'pipe',
       });
 
+      this.process.unref();
+
       if (this.process.stdout instanceof ReadableStream) {
         this.readStream(this.process.stdout);
       }

@@ -8,9 +8,15 @@ export class NetworkManager {
   async init(): Promise<void> {
     try {
       // Create pflog0 interface if it doesn't exist
+      // In CI, ifconfig might fail if not root, but 'reject: false' handles it.
       await this.os.proc.sudo('ifconfig', ['pflog0', 'create'], { reject: false });
-      // Ensure PF is enabled
-      await this.os.proc.sudo('pfctl', ['-e'], { reject: false });
+
+      // Check if PF is already enabled to avoid redundant sudo calls or side effects
+      const status = await this.checkStatus();
+      if (!status.enabled) {
+        logger.info('Enabling macOS Packet Filter (PF)...');
+        await this.os.proc.sudo('pfctl', ['-e'], { reject: false });
+      }
     } catch (err) {
       logger.warn(`Failed to initialize network manager: ${err}`);
     }
