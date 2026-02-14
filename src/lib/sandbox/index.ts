@@ -1,4 +1,4 @@
-import { getSandboxPort } from '../common/utils/port.ts';
+import { getSandboxPort, getTrafficProxyPort } from '../common/utils/port.ts';
 import { getIdentity } from '../identity/index.ts';
 import { getPersistence } from '../persistence/index.ts';
 import { Provisioner } from '../provision/index.ts';
@@ -16,9 +16,10 @@ export function getSandboxManager(): SandboxManager {
     sandboxManager = new DefaultSandboxManager(
       identity,
       persistence.sandboxes,
-      (instanceName, tools, provider, apiPort) =>
-        provisioner.provisionSession(instanceName, tools, provider, apiPort),
+      (instanceName, tools, provider, apiPort, proxyPort) =>
+        provisioner.provisionSession(instanceName, tools, provider, apiPort, proxyPort),
       getSandboxPort,
+      getTrafficProxyPort,
     );
   }
   return sandboxManager;
