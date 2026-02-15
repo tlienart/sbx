@@ -49,4 +49,12 @@ This plan resolves the Makefile warnings and implements a clear separation betwe
     - Verify that blocks in these sandboxes trigger the "Network Block" notification with an `/allow` hint.
 - [x] **Local**: Verify that running `opencode` locally still uses the root `opencode.json` and `.opencode/` folder.
 
-Plan updated. Use `/switch build` to start implementation.
+## 6. Fix CI failures in PR #19
+- [x] **Fix `noExplicitAny` in `src/lib/provision/index.ts`**:
+    - Replace `let baseConfig: any = {};` with a more specific type like `Record<string, unknown>`.
+- [x] **Fix `noUnusedTemplateLiteral` in `src/lib/bot/dispatcher.ts`**:
+    - Change backticks to single quotes for static strings on lines 250 and 252.
+- [x] **Verification**:
+    - Run `bun run check` locally to ensure all lint issues are resolved.
+
+Plan updated. To proceed with this plan, enter `/switch build`

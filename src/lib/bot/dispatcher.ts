@@ -247,9 +247,9 @@ export class BotDispatcher {
       if (restricted) {
         const status = await sandboxManager.getNetworkStatus(sandbox.id);
         const allowed = status.whitelist.map((d) => `\`${d}\``).join(', ');
-        welcomeMsg += `\n\n🔒 **Restricted Network Enabled**\n`;
+        welcomeMsg += '\n\n🔒 **Restricted Network Enabled**\n';
         welcomeMsg += `Outbound traffic is blocked except for: ${allowed}\n`;
-        welcomeMsg += `Use \`/allow <domain>\` to whitelist new domains.`;
+        welcomeMsg += 'Use `/allow <domain>` to whitelist new domains.';
       }
 
       await this.platform.sendMessage(newChannelId, welcomeMsg);
