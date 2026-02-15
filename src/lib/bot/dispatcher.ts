@@ -153,6 +153,9 @@ export class BotDispatcher {
       case '/new':
         await this.cmdNew(msg, args);
         break;
+      case '/newpf':
+        await this.cmdNewPF(msg, args);
+        break;
       case '/status':
         await this.cmdStatus(msg);
         break;
@@ -181,9 +184,27 @@ export class BotDispatcher {
 
   private async cmdNew(msg: IncomingMessage, args: string[]) {
     const title = args.join('-') || 'default';
+    await this.createSandboxAndNotify(msg, title, false);
+  }
 
+  private async cmdNewPF(msg: IncomingMessage, args: string[]) {
+    const title = args[0] || 'default';
+    const whitelist = args[1] ? args[1].split(',').map((d) => d.trim()) : [];
+    await this.createSandboxAndNotify(msg, title, true, whitelist);
+  }
+
+  private async createSandboxAndNotify(
+    msg: IncomingMessage,
+    title: string,
+    restricted: boolean,
+    whitelist: string[] = [],
+  ) {
     // Immediate acknowledgment
-    await this.platform.sendMessage(msg.channelId, `🚀 Creating new sandbox: **${title}**...`);
+    const pfSuffix = restricted ? ' (PF-restricted)' : '';
+    await this.platform.sendMessage(
+      msg.channelId,
+      `🚀 Creating new sandbox: **${title}**${pfSuffix}...`,
+    );
 
     try {
       const sandboxManager = getSandboxManager();
@@ -193,7 +214,11 @@ export class BotDispatcher {
 
       // Step 1: Identity & Toolchain
       await this.platform.sendMessage(msg.channelId, '👤 Creating sandbox identity...');
-      const sandbox = await sandboxManager.createSandbox({ name: title });
+      const sandbox = await sandboxManager.createSandbox({
+        name: title,
+        restrictedNetwork: restricted,
+        whitelist: whitelist,
+      });
       const instanceName = sandbox.id.split('-')[0] as string;
       const username = await identity.users.getSessionUsername(instanceName);
 
@@ -217,10 +242,17 @@ export class BotDispatcher {
         msg.channelId,
         `✅ Sandbox created! Join topic: **${newChannelId.split(':')[1]}**`,
       );
-      await this.platform.sendMessage(
-        newChannelId,
-        `Welcome! I'm ready in sandbox \`${sandbox.id}\`. Mode: **plan**.`,
-      );
+
+      let welcomeMsg = `Welcome! I'm ready in sandbox \`${sandbox.id}\`. Mode: **plan**.`;
+      if (restricted) {
+        const status = await sandboxManager.getNetworkStatus(sandbox.id);
+        const allowed = status.whitelist.map((d) => `\`${d}\``).join(', ');
+        welcomeMsg += `\n\n🔒 **Restricted Network Enabled**\n`;
+        welcomeMsg += `Outbound traffic is blocked except for: ${allowed}\n`;
+        welcomeMsg += `Use \`/allow <domain>\` to whitelist new domains.`;
+      }
+
+      await this.platform.sendMessage(newChannelId, welcomeMsg);
     } catch (error) {
       console.error(`Error creating sandbox: ${error}`);
       await this.platform.sendMessage(
