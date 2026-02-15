@@ -1,7 +1,7 @@
 # Detect Bun - fall back to home directory installation if not in PATH
 BUN := $(shell command -v bun || echo $(HOME)/.bun/bin/bun)
 
-.PHONY: install setup clean test logs doctor check create list delete exec test_e2e typecheck start lint
+.PHONY: install setup clean test logs doctor check create list delete exec test_e2e typecheck start lint test_sandbox test_bot test_unit test_full test_persistence test_identity test_bridge test_unit_sandbox test_agents test_provision
 
 # Start the SBX Zulip bot
 start: setup
@@ -72,7 +72,7 @@ typecheck: setup
 lint: setup
 	@$(BUN) run lint
 
-# Run core sandbox isolation tests
+# Run core sandbox isolation tests (Integration)
 test_sandbox: setup typecheck
 	@$(BUN) run test:sandbox
 
@@ -101,14 +101,6 @@ test_agents: setup
 
 test_provision: setup
 	@$(BUN) test src/lib/provision/provision.test.ts
-
-# Run core sandbox isolation tests (Integration)
-test_sandbox: setup typecheck
-	@$(BUN) run test:sandbox
-
-# Run fast bridge bot logic tests
-test_bot: setup
-	@$(BUN) run test:bot
 
 # Run REST API integration tests
 test_e2e: setup

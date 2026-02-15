@@ -13,7 +13,16 @@ Agents run as a standard macOS user within an isolated session. They interact wi
 
 ## Guidelines for Agents
 
-### 1. File System Access
+### 1. Planning to Implementation Flow (Sandbox Only)
+*   **Planning Agent**: When a plan is ready and saved to `PLAN.md`, always end your message with: "To proceed with this plan, enter `/switch build`". This guides the user to the next step of the workflow.
+*   **Build Agent**: Always read `PLAN.md` before starting work. Mark items as completed once implemented.
+
+### 2. Configuration & Assets
+*   **Local Setup**: Uses `opencode.json` and the `.opencode/` directory in the repository root.
+*   **Sandbox Setup**: Uses `opencode.sandbox.json` and the `.opencode.sandbox/` directory. These are deployed to `~/.config/opencode/` inside the sandbox during provisioning.
+*   **Isolation**: Keep sandbox-specific skills or prompts in the `.sandbox` templates to avoid cluttering your local environment.
+
+### 3. File System Access
 *   **Stay in Home**: Always operate within your home directory (`/Users/sbx_...`).
 *   **Temporary Files**: Use `$TMPDIR` (usually `~/tmp`) for temporary files.
 *   **Host Isolation**: Do not attempt to access `/Users/<host_user>`. It is protected by OS-level permissions.
