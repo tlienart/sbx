@@ -158,7 +158,7 @@ pkgx --setup 2>/dev/null | source /dev/stdin 2>/dev/null || true
     apiPort: number,
   ): Promise<void> {
     const sandboxConfigPath = 'opencode.sandbox.json';
-    let baseConfig: any = {};
+    let baseConfig: Record<string, unknown> = {};
 
     if (this.os.fs.exists(sandboxConfigPath)) {
       try {
@@ -175,7 +175,7 @@ pkgx --setup 2>/dev/null | source /dev/stdin 2>/dev/null || true
     };
 
     const dynamicConfig = {
-      model: baseConfig.model || models[provider] || models.google,
+      model: (baseConfig.model as string) || models[provider] || models.google,
       provider: {
         google: {
           options: {
@@ -204,7 +204,7 @@ pkgx --setup 2>/dev/null | source /dev/stdin 2>/dev/null || true
       ...dynamicConfig,
       // Deep merge provider options
       provider: {
-        ...baseConfig.provider,
+        ...(baseConfig.provider as Record<string, unknown>),
         ...dynamicConfig.provider,
       },
     };
