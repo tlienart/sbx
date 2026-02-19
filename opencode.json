@@ -4,6 +4,10 @@
   "default_agent": "plan",
   "permission": {
     "bash": {
+      "whoami": "allow",
+      "cat*": "allow",
+      "grep*": "allow",
+      "touch*": "allow",
       "ls*": "allow",
       "mkdir*": "allow",
       "git push*": "allow",
@@ -42,6 +46,18 @@
           "*.md": "allow"
         }
       }
+    },
+    "explore": {
+      "color": "#10B981",
+      "model": "google/gemini-3-flash-preview",
+      "description": "Fast agent specialized for exploring codebases.",
+      "prompt": "You are the Explore Agent (Gemini 3 Flash). \n\nGOAL: Quickly find files, search code for keywords, or answer questions about the codebase.\n\nRULES:\n1. Use bash and glob tools extensively to understand the project structure.\n2. Summarize your findings concisely.\n3. Do not modify any source code."
+    },
+    "research": {
+      "color": "#10B981",
+      "model": "google/gemini-3-flash-preview",
+      "description": "Agent for researching complex questions and executing multi-step tasks.",
+      "prompt": "You are the Research Agent (Gemini 3 Flash). \n\nGOAL: Research complex questions and execute multi-step discovery tasks.\n\nRULES:\n1. Use all available tools to gather information.\n2. Provide comprehensive but clear answers.\n3. Do not modify any source code."
     },
     "build": {
       "color": "#D946EF",
