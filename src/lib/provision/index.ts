@@ -30,6 +30,7 @@ export class Provisioner {
     tools?: string,
     provider = 'google',
     apiPort = 9999,
+    proxyPort?: number,
   ): Promise<void> {
     await this.ensurePkgxOnHost();
     const sessionUser = await this.identity.getSessionUsername(instanceName);
@@ -38,12 +39,25 @@ export class Provisioner {
 
     const profileFiles = ['.zprofile', '.zshenv', '.bash_profile', '.bashrc'];
 
+    const proxyScript = proxyPort
+      ? `
+export HTTP_PROXY="http://127.0.0.1:${proxyPort}"
+export HTTPS_PROXY="http://127.0.0.1:${proxyPort}"
+export http_proxy="http://127.0.0.1:${proxyPort}"
+export https_proxy="http://127.0.0.1:${proxyPort}"
+export NO_PROXY="localhost,127.0.0.1"
+export no_proxy="localhost,127.0.0.1"
+`.trim()
+      : '';
+
     const setupScript = `
 export PATH="$HOME/.sbx/bin:/usr/local/bin:$PATH"
 export PKGX_YES=1
 export TMPDIR="$HOME/tmp"
 export BRIDGE_SOCK="${bridgeDir}/bridge.sock"
 export PROXY_SOCK="${bridgeDir}/proxy.sock"
+
+${proxyScript}
 
 # Satisfy LLM SDKs pre-flight checks
 export GOOGLE_GENERATIVE_AI_API_KEY="SBX_PROXY_ACTIVE"
@@ -111,6 +125,7 @@ pkgx --setup 2>/dev/null | source /dev/stdin 2>/dev/null || true
 
     await this.deployShims(sessionUser);
     await this.deployOpenCodeConfig(sessionUser, provider, apiPort);
+    await this.deployOpenCodeAssets(sessionUser);
   }
 
   async deployShims(sessionUser: string): Promise<void> {
@@ -142,14 +157,25 @@ pkgx --setup 2>/dev/null | source /dev/stdin 2>/dev/null || true
     provider: string,
     apiPort: number,
   ): Promise<void> {
+    const sandboxConfigPath = 'opencode.sandbox.json';
+    let baseConfig: Record<string, unknown> = {};
+
+    if (this.os.fs.exists(sandboxConfigPath)) {
+      try {
+        baseConfig = JSON.parse(this.os.fs.read(sandboxConfigPath));
+      } catch (err) {
+        logger.warn(`Failed to parse ${sandboxConfigPath}: ${err}. Using default.`);
+      }
+    }
+
     const models: Record<string, string> = {
       google: 'google/gemini-3-flash-preview',
       openai: 'openai/gpt-4o',
       anthropic: 'anthropic/claude-3-5-sonnet-latest',
     };
 
-    const config = {
-      model: models[provider] || models.google,
+    const dynamicConfig = {
+      model: (baseConfig.model as string) || models[provider] || models.google,
       provider: {
         google: {
           options: {
@@ -172,15 +198,57 @@ pkgx --setup 2>/dev/null | source /dev/stdin 2>/dev/null || true
       },
     };
 
+    // Merge base config with dynamic overrides
+    const finalConfig = {
+      ...baseConfig,
+      ...dynamicConfig,
+      // Deep merge provider options
+      provider: {
+        ...(baseConfig.provider as Record<string, unknown>),
+        ...dynamicConfig.provider,
+      },
+    };
+
     const configDir = `/Users/${sessionUser}/.config/opencode`;
     const configFile = `${configDir}/opencode.json`;
     const tmpFile = `/tmp/sbx_opencode_config_${sessionUser}.json`;
 
-    this.os.fs.write(tmpFile, JSON.stringify(config, null, 2));
+    this.os.fs.write(tmpFile, JSON.stringify(finalConfig, null, 2));
     await this.os.proc.run('chmod', ['644', tmpFile]);
 
     await this.os.proc.runAsUser(sessionUser, `mkdir -p ${configDir}`);
     await this.os.proc.sudo('mv', [tmpFile, configFile]);
     await this.os.proc.sudo('chown', [`${sessionUser}:staff`, configFile]);
+  }
+
+  async deployOpenCodeAssets(sessionUser: string): Promise<void> {
+    const sandboxAssetsDir = '.opencode.sandbox';
+    const configDir = `/Users/${sessionUser}/.config/opencode`;
+
+    if (!this.os.fs.exists(sandboxAssetsDir)) {
+      return;
+    }
+
+    logger.debug(`Deploying sandbox assets from ${sandboxAssetsDir} to ${sessionUser}...`);
+
+    try {
+      // Use sudo cp to handle cross-user copy if needed, though here we are host-user to sandbox-user
+      // Actually, since we are running as host user, we can just copy to the sandbox home if permissions allow,
+      // but usually it's safer to copy to /tmp and then move as user, OR use sudo cp.
+      const tmpDir = `/tmp/sbx_assets_${sessionUser}`;
+      await this.os.proc.run('rm', ['-rf', tmpDir]);
+      await this.os.proc.run('cp', ['-R', sandboxAssetsDir, tmpDir]);
+      await this.os.proc.run('chmod', ['-R', '755', tmpDir]);
+
+      await this.os.proc.runAsUser(sessionUser, `mkdir -p ${configDir}`);
+
+      // Copy contents of tmpDir (the sandboxAssetsDir contents) to configDir
+      // We use cp -R /tmp/sbx_assets_user/. /path/to/config/
+      await this.os.proc.runAsUser(sessionUser, `cp -R ${tmpDir}/. ${configDir}/`);
+
+      await this.os.proc.run('rm', ['-rf', tmpDir]);
+    } catch (err) {
+      logger.warn(`Failed to deploy OpenCode assets: ${err}`);
+    }
   }
 }

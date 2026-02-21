@@ -14,6 +14,8 @@ export class BotDispatcher {
   private bridge: BridgeBox;
   private provider: string;
   private os = getOS();
+  // Per-sandbox lock: sandboxId -> current running promise
+  private sandboxLocks: Map<string, Promise<void>> = new Map();
 
   constructor(platform: MessagingPlatform, bridge: BridgeBox, provider = 'google') {
     this.platform = platform;
@@ -29,6 +31,11 @@ export class BotDispatcher {
 
     await this.recoverSessions();
     await this.reconcileSessions();
+
+    const sandboxManager = getSandboxManager();
+    sandboxManager.onNetworkBlocked(async (sandboxId, domain, method, url) => {
+      await this.handleNetworkBlocked(sandboxId, domain, method, url);
+    });
 
     // Periodic reconciliation every 30 minutes
     setInterval(() => this.reconcileSessions(), 30 * 60 * 1000);
@@ -112,7 +119,7 @@ export class BotDispatcher {
 
       // Recreate using the topic name as title if possible
       const topicName = msg.channelId.split(':')[1] || 'recovered';
-      const newSandbox = await sandboxManager.createSandbox(topicName);
+      const newSandbox = await sandboxManager.createSandbox({ name: topicName });
       sandboxId = newSandbox.id;
 
       // Map existing channel to new sandbox
@@ -132,7 +139,20 @@ export class BotDispatcher {
       );
     }
 
-    await this.relayToAgent(sandboxId, msg);
+    // Per-sandbox lock: queue prompts for the same sandbox, but allow different sandboxes concurrently
+    if (this.sandboxLocks.has(sandboxId)) {
+      await this.platform.sendMessage(
+        msg.channelId,
+        '⏳ This sandbox is busy. Your message will be processed when the current task finishes.',
+      );
+      await this.sandboxLocks.get(sandboxId);
+    }
+
+    const relayPromise = this.relayToAgent(sandboxId, msg).finally(() => {
+      this.sandboxLocks.delete(sandboxId);
+    });
+    this.sandboxLocks.set(sandboxId, relayPromise);
+    await relayPromise;
   }
 
   private async handleCommand(msg: IncomingMessage) {
@@ -147,6 +167,9 @@ export class BotDispatcher {
     switch (command) {
       case '/new':
         await this.cmdNew(msg, args);
+        break;
+      case '/newpf':
+        await this.cmdNewPF(msg, args);
         break;
       case '/status':
         await this.cmdStatus(msg);
@@ -163,6 +186,12 @@ export class BotDispatcher {
       case '/restart':
         await this.cmdRestart(msg);
         break;
+      case '/allow':
+        await this.cmdAllow(msg, args);
+        break;
+      case '/network':
+        await this.cmdNetwork(msg);
+        break;
       default:
         await this.platform.sendMessage(msg.channelId, `Unknown command: ${command}`);
     }
@@ -170,9 +199,27 @@ export class BotDispatcher {
 
   private async cmdNew(msg: IncomingMessage, args: string[]) {
     const title = args.join('-') || 'default';
+    await this.createSandboxAndNotify(msg, title, false);
+  }
 
+  private async cmdNewPF(msg: IncomingMessage, args: string[]) {
+    const title = args[0] || 'default';
+    const whitelist = args[1] ? args[1].split(',').map((d) => d.trim()) : [];
+    await this.createSandboxAndNotify(msg, title, true, whitelist);
+  }
+
+  private async createSandboxAndNotify(
+    msg: IncomingMessage,
+    title: string,
+    restricted: boolean,
+    whitelist: string[] = [],
+  ) {
     // Immediate acknowledgment
-    await this.platform.sendMessage(msg.channelId, `🚀 Creating new sandbox: **${title}**...`);
+    const pfSuffix = restricted ? ' (PF-restricted)' : '';
+    await this.platform.sendMessage(
+      msg.channelId,
+      `🚀 Creating new sandbox: **${title}**${pfSuffix}...`,
+    );
 
     try {
       const sandboxManager = getSandboxManager();
@@ -182,7 +229,11 @@ export class BotDispatcher {
 
       // Step 1: Identity & Toolchain
       await this.platform.sendMessage(msg.channelId, '👤 Creating sandbox identity...');
-      const sandbox = await sandboxManager.createSandbox(title);
+      const sandbox = await sandboxManager.createSandbox({
+        name: title,
+        restrictedNetwork: restricted,
+        whitelist: whitelist,
+      });
       const instanceName = sandbox.id.split('-')[0] as string;
       const username = await identity.users.getSessionUsername(instanceName);
 
@@ -206,10 +257,17 @@ export class BotDispatcher {
         msg.channelId,
         `✅ Sandbox created! Join topic: **${newChannelId.split(':')[1]}**`,
       );
-      await this.platform.sendMessage(
-        newChannelId,
-        `Welcome! I'm ready in sandbox \`${sandbox.id}\`. Mode: **plan**.`,
-      );
+
+      let welcomeMsg = `Welcome! I'm ready in sandbox \`${sandbox.id}\`. Mode: **plan**.`;
+      if (restricted) {
+        const status = await sandboxManager.getNetworkStatus(sandbox.id);
+        const allowed = status.whitelist.map((d) => `\`${d}\``).join(', ');
+        welcomeMsg += '\n\n🔒 **Restricted Network Enabled**\n';
+        welcomeMsg += `Outbound traffic is blocked except for: ${allowed}\n`;
+        welcomeMsg += 'Use `/allow <domain>` to whitelist new domains.';
+      }
+
+      await this.platform.sendMessage(newChannelId, welcomeMsg);
     } catch (error) {
       console.error(`Error creating sandbox: ${error}`);
       await this.platform.sendMessage(
@@ -284,10 +342,21 @@ export class BotDispatcher {
       const syntheticMsg: IncomingMessage = {
         ...msg,
         content: 'ok',
-        // Preserve original message ID so reactions work if needed,
-        // though we've already reacted to the /switch command.
       };
-      await this.relayToAgent(sandboxId, syntheticMsg);
+
+      if (this.sandboxLocks.has(sandboxId)) {
+        await this.platform.sendMessage(
+          msg.channelId,
+          '⏳ This sandbox is busy. Switch will take effect after the current task finishes.',
+        );
+        await this.sandboxLocks.get(sandboxId);
+      }
+
+      const relayPromise = this.relayToAgent(sandboxId, syntheticMsg).finally(() => {
+        this.sandboxLocks.delete(sandboxId);
+      });
+      this.sandboxLocks.set(sandboxId, relayPromise);
+      await relayPromise;
     } else {
       await this.platform.sendMessage(
         msg.channelId,
@@ -514,5 +583,77 @@ export class BotDispatcher {
       await sandboxManager.removeSandbox(sandboxId);
       persistence.sessions.deleteSession(this.platform.name, channelId);
     }
+  }
+
+  private async handleNetworkBlocked(
+    sandboxId: string,
+    domain: string,
+    method: string,
+    url: string,
+  ) {
+    const persistence = getPersistence();
+    const sessions = persistence.sessions.findBySandboxId(sandboxId);
+
+    for (const session of sessions) {
+      if (session.platform === this.platform.name) {
+        await this.platform.sendMessage(
+          session.external_id,
+          `🚨 **Network Block**: Agent tried to ${method} to \`${domain}\`${url === domain ? '' : ` (${url})`}.\n` +
+            `Do you want to allow this domain? Reply with \`/allow ${domain}\``,
+        );
+      }
+    }
+  }
+
+  private async cmdAllow(msg: IncomingMessage, args: string[]) {
+    const persistence = getPersistence();
+    const sandboxId = persistence.sessions.getSandboxId(msg.platform, msg.channelId);
+    if (!sandboxId) return;
+
+    const domain = args[0];
+    if (!domain) {
+      await this.platform.sendMessage(msg.channelId, '❌ Please specify a domain to allow.');
+      return;
+    }
+
+    const sandboxManager = getSandboxManager();
+    const sandbox = await sandboxManager.getSandbox(sandboxId);
+    const whitelist = sandbox.whitelist || [];
+    if (!whitelist.includes(domain)) {
+      whitelist.push(domain);
+      await sandboxManager.updateWhitelist(sandboxId, whitelist);
+      await this.platform.sendMessage(
+        msg.channelId,
+        `✅ Domain \`${domain}\` added to whitelist. The agent can now retry.`,
+      );
+    } else {
+      await this.platform.sendMessage(
+        msg.channelId,
+        `ℹ️ Domain \`${domain}\` is already whitelisted.`,
+      );
+    }
+  }
+
+  private async cmdNetwork(msg: IncomingMessage) {
+    const persistence = getPersistence();
+    const sandboxId = persistence.sessions.getSandboxId(msg.platform, msg.channelId);
+    if (!sandboxId) return;
+
+    const sandboxManager = getSandboxManager();
+    const status = await sandboxManager.getNetworkStatus(sandboxId);
+
+    let response = `🌐 **Network Status for Sandbox ${sandboxId}**\n\n`;
+    response += `Restriction: ${status.restricted ? '🔒 **ENABLED**' : '🔓 DISABLED'}\n`;
+    response += `PF Firewall: ${status.pf.enabled ? '✅ Enabled' : '❌ DISABLED'}\n`;
+    response += `PF Anchor Setup: ${status.pf.anchorReferenced ? '✅ Correct' : '⚠️ Missing in /etc/pf.conf'}\n\n`;
+
+    response += '**Whitelist:**\n';
+    if (status.whitelist.length > 0) {
+      response += status.whitelist.map((d: string) => `- ${d}`).join('\n');
+    } else {
+      response += '(None)';
+    }
+
+    await this.platform.sendMessage(msg.channelId, response);
   }
 }

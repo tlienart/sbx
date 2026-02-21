@@ -223,17 +223,19 @@ export class CommandBridge {
       ];
       for (const arg of args) {
         if (blocked.some((b) => arg === b || arg.startsWith(`${b}=`))) {
-          return `Flag or subcommand '${arg}' is not allowed.`;
+          return `Flag or subcommand '${arg}' is not allowed for security reasons.`;
         }
       }
     }
     if (command === 'gh') {
       const blocked = ['alias', 'extension', 'config', 'secret'];
       for (const arg of args) {
-        if (blocked.includes(arg)) return `Subcommand '${arg}' is not allowed.`;
+        if (blocked.includes(arg)) {
+          return `Subcommand '${arg}' is not allowed for security reasons.`;
+        }
       }
       if (args.includes('auth') && !args.includes('status')) {
-        return "Subcommand 'auth' (except 'status') is not allowed.";
+        return "Subcommand 'auth' (except 'status') is not allowed for security reasons.";
       }
     }
     return null;

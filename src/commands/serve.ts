@@ -24,6 +24,7 @@ export async function serveCommand(options: ServeOptions) {
   try {
     if (!isMock) {
       await os.proc.ensureSudo();
+      await sandboxManager.initNetwork();
     }
     await bridge.start();
     logger.success('Host bridge started.');
@@ -79,7 +80,11 @@ export async function serveCommand(options: ServeOptions) {
 
           logger.info(`[API] Creating session: ${instance || 'unnamed'}`);
 
-          const sandbox = await sandboxManager.createSandbox(instance, tools, provider);
+          const sandbox = await sandboxManager.createSandbox({
+            name: instance,
+            tools,
+            provider,
+          });
           const instanceName = sandbox.id.split('-')[0] as string;
           const username = await identity.getSessionUsername(instanceName);
           const apiPort = getSandboxPort(instanceName);
@@ -118,7 +123,7 @@ export async function serveCommand(options: ServeOptions) {
 
           if (!sandbox) {
             logger.info(`[API] Sandbox not found, auto-creating: ${instance}`);
-            sandbox = await sandboxManager.createSandbox(instance);
+            sandbox = await sandboxManager.createSandbox({ name: instance });
           }
 
           const instanceName = sandbox.id.split('-')[0] as string;
@@ -127,7 +132,7 @@ export async function serveCommand(options: ServeOptions) {
 
           if (!isMock) {
             if (!(await sandboxManager.isSandboxAlive(sandbox.id))) {
-              await sandboxManager.createSandbox(sandbox.name, undefined, undefined);
+              await sandboxManager.createSandbox({ name: sandbox.name });
             }
             await bridge.attachToSandbox(username, apiPort);
           }
@@ -191,7 +196,10 @@ export async function serveCommand(options: ServeOptions) {
 
           if (!sandbox) {
             logger.info(`[API] Sandbox not found, auto-creating: ${instance}`);
-            sandbox = await sandboxManager.createSandbox(instance, undefined, provider);
+            sandbox = await sandboxManager.createSandbox({
+              name: instance,
+              provider,
+            });
           }
 
           const instanceName = sandbox.id.split('-')[0] as string;
@@ -200,7 +208,10 @@ export async function serveCommand(options: ServeOptions) {
 
           if (!isMock) {
             if (!(await sandboxManager.isSandboxAlive(sandbox.id))) {
-              await sandboxManager.createSandbox(sandbox.name, undefined, provider);
+              await sandboxManager.createSandbox({
+                name: sandbox.name,
+                provider,
+              });
             }
             await bridge.attachToSandbox(username, apiPort);
           }

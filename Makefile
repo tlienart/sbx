@@ -1,7 +1,11 @@
 # Detect Bun - fall back to home directory installation if not in PATH
 BUN := $(shell command -v bun || echo $(HOME)/.bun/bin/bun)
 
-.PHONY: install setup clean test logs doctor check create list delete exec test_e2e typecheck start lint
+.PHONY: install setup clean test logs doctor check create list delete exec test_e2e typecheck start lint test_sandbox test_bot test_unit test_full test_persistence test_identity test_bridge test_unit_sandbox test_agents test_provision check_sudo
+
+# Pre-flight sudo check
+check_sudo:
+	@sudo -n -v 2>/dev/null || (echo "🔑 Sbx requires administrative privileges. Please authenticate:" && sudo -v)
 
 # Start the SBX Zulip bot
 start: setup
@@ -29,7 +33,7 @@ USER_PREFIX := sbx_$(shell whoami)_
 
 # Create one or more sandboxes
 # Usage: make create name="session1 session2" tools="gh,jq" provider="google"
-create: setup
+create: check_sudo setup
 	./bin/sbx create $(name) $(if $(tools),--tools "$(tools)") $(if $(provider),--provider "$(provider)")
 
 # List all sandboxes
@@ -47,7 +51,7 @@ delete:
 	./bin/sbx delete $(name)
 
 # Aggressively clean up all sbx related artifacts
-clean:
+clean: check_sudo
 	@echo "🧹 Cleaning up sbx sessions and processes..."
 	-@sudo pkill -9 -f "sysadminctl|su - sbx_.*|api_bridge.py" 2>/dev/null || true
 	-@dscl . -list /Users | grep $(USER_PREFIX) | while read user; do \
@@ -72,8 +76,8 @@ typecheck: setup
 lint: setup
 	@$(BUN) run lint
 
-# Run core sandbox isolation tests
-test_sandbox: setup typecheck
+# Run core sandbox isolation tests (Integration)
+test_sandbox: check_sudo setup typecheck
 	@$(BUN) run test:sandbox
 
 # Run fast bridge bot logic tests
@@ -102,20 +106,12 @@ test_agents: setup
 test_provision: setup
 	@$(BUN) test src/lib/provision/provision.test.ts
 
-# Run core sandbox isolation tests (Integration)
-test_sandbox: setup typecheck
-	@$(BUN) run test:sandbox
-
-# Run fast bridge bot logic tests
-test_bot: setup
-	@$(BUN) run test:bot
-
 # Run REST API integration tests
-test_e2e: setup
+test_e2e: check_sudo setup
 	@$(BUN) run test:api
 
 # Run everything sequentially
-test_full: test_unit test_sandbox test_bot test_e2e
+test_full: check_sudo test_unit test_sandbox test_bot test_e2e
 
 # Standard staged verification (backwards compatibility)
 test: test_unit

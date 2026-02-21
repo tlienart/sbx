@@ -4,6 +4,7 @@ import { getOS } from '../lib/common/os/index.ts';
 import { getIdentity } from '../lib/identity/index.ts';
 import { logger } from '../lib/logger.ts';
 import { ZulipMessaging } from '../lib/messaging/zulip.ts';
+import { getSandboxManager } from '../lib/sandbox/index.ts';
 import 'dotenv/config';
 
 export async function botCommand() {
@@ -29,8 +30,13 @@ export async function botCommand() {
     logger.success('Sudo authentication verified.');
 
     const identity = getIdentity();
+    const sandboxManager = getSandboxManager();
     const hostUser = await identity.users.getHostUser();
     const bridge = new BridgeBox(hostUser);
+
+    if (process.env.SBX_MOCK !== '1') {
+      await sandboxManager.initNetwork();
+    }
 
     await bridge.start();
 
