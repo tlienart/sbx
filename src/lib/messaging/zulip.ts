@@ -227,7 +227,9 @@ export class ZulipMessaging implements MessagingPlatform {
             };
 
             for (const handler of this.messageHandlers) {
-              await handler(incoming);
+              handler(incoming).catch((err) => {
+                console.error(`[Zulip] Handler error for ${incoming.channelId}: ${err}`);
+              });
             }
           }
         }

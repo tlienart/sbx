@@ -29,12 +29,14 @@ export class NetworkManager {
     // 1. Allow loopback traffic to specific ports (API and Proxy)
     // 2. Block all other outbound traffic (TCP/UDP) for this UID, logging blocks.
     // Use 'quick' to stop processing once a match is found.
-    const rules = [
-      ...allowedPorts.map(
-        (port) => `pass out quick proto tcp from any to 127.0.0.1 port ${port} user ${uid}`,
-      ),
-      `block out log (all, user) quick proto {tcp, udp} all user ${uid}`,
-    ].join('\n');
+    const rules =
+      [
+        ...allowedPorts.map(
+          (port) => `pass out quick proto tcp from any to 127.0.0.1 port ${port} user ${uid}`,
+        ),
+        `block out log quick proto tcp all user ${uid}`,
+        `block out log quick proto udp all user ${uid}`,
+      ].join('\n') + '\n';
 
     const anchorName = `${this.anchorBase}/uid_${uid}`;
 

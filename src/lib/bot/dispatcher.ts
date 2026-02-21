@@ -14,6 +14,8 @@ export class BotDispatcher {
   private bridge: BridgeBox;
   private provider: string;
   private os = getOS();
+  // Per-sandbox lock: sandboxId -> current running promise
+  private sandboxLocks: Map<string, Promise<void>> = new Map();
 
   constructor(platform: MessagingPlatform, bridge: BridgeBox, provider = 'google') {
     this.platform = platform;
@@ -137,7 +139,20 @@ export class BotDispatcher {
       );
     }
 
-    await this.relayToAgent(sandboxId, msg);
+    // Per-sandbox lock: queue prompts for the same sandbox, but allow different sandboxes concurrently
+    if (this.sandboxLocks.has(sandboxId)) {
+      await this.platform.sendMessage(
+        msg.channelId,
+        '⏳ This sandbox is busy. Your message will be processed when the current task finishes.',
+      );
+      await this.sandboxLocks.get(sandboxId);
+    }
+
+    const relayPromise = this.relayToAgent(sandboxId, msg).finally(() => {
+      this.sandboxLocks.delete(sandboxId);
+    });
+    this.sandboxLocks.set(sandboxId, relayPromise);
+    await relayPromise;
   }
 
   private async handleCommand(msg: IncomingMessage) {
@@ -327,10 +342,21 @@ export class BotDispatcher {
       const syntheticMsg: IncomingMessage = {
         ...msg,
         content: 'ok',
-        // Preserve original message ID so reactions work if needed,
-        // though we've already reacted to the /switch command.
       };
-      await this.relayToAgent(sandboxId, syntheticMsg);
+
+      if (this.sandboxLocks.has(sandboxId)) {
+        await this.platform.sendMessage(
+          msg.channelId,
+          '⏳ This sandbox is busy. Switch will take effect after the current task finishes.',
+        );
+        await this.sandboxLocks.get(sandboxId);
+      }
+
+      const relayPromise = this.relayToAgent(sandboxId, syntheticMsg).finally(() => {
+        this.sandboxLocks.delete(sandboxId);
+      });
+      this.sandboxLocks.set(sandboxId, relayPromise);
+      await relayPromise;
     } else {
       await this.platform.sendMessage(
         msg.channelId,

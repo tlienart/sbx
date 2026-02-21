@@ -11,6 +11,8 @@ const SYSTEM_WHITELIST = [
   'get.pkgx.sh',
   'inventory.pkgx.sh',
   'data.pkgx.sh',
+  'dist.pkgx.dev',
+  'models.dev',
   'github.com',
   'objects.githubusercontent.com',
   'pypi.org',
